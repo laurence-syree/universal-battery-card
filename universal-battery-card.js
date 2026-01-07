@@ -541,6 +541,11 @@ class UniversalBatteryCardEditor extends LitElement {
               For static values (capacity, reserve, rates), you can either select an entity OR enter a fixed value. Fixed values take priority.
             </div>
           ` : ''}
+          ${this._currentTab === 'soc' ? html`
+            <div class="helper-text">
+              Set color thresholds for SOC levels. "Very Low" color applies to any value below the "Low" threshold.
+            </div>
+          ` : ''}
           <ha-form
             .hass=${this.hass}
             .data=${this._config}
