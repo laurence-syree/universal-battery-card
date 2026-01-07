@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '1.4.3';
+const VERSION = '1.4.4';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -22,7 +22,6 @@ const DEFAULT_CONFIG = {
   soc_colour_medium: [255, 166, 0],
   soc_colour_low: [219, 68, 55],
   soc_colour_very_low: [139, 0, 0],
-  display_type: 2,
   decimal_places: 3,
   icon_charging: 'mdi:lightning-bolt',
   icon_discharging: 'mdi:home-export-outline',
@@ -149,7 +148,7 @@ function formatDuration(minutes) {
  * @returns {string} Formatted as 'MM/DD HH:MM' or '--/-- --:--'
  */
 function formatTimeOfArrival(minutes) {
-  if (minutes === null || minutes < 0) return '--:--';
+  if (minutes === null || minutes < 0) return '--/-- --:--';
   const now = new Date();
   const arrival = new Date(now.getTime() + minutes * 60000);
   const month = (arrival.getMonth() + 1).toString().padStart(2, '0');
@@ -520,12 +519,6 @@ const editorStyles = css`
     color: var(--secondary-text-color);
     margin-bottom: 16px;
   }
-  .section-title {
-    font-weight: 500;
-    margin: 16px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--divider-color);
-  }
 `;
 
 // ============================================================================
@@ -547,26 +540,21 @@ const GENERAL_SCHEMA = [
 ];
 
 const ENTITIES_SCHEMA = [
-  { type: 'section', label: 'Required Sensors' },
+  // Required Sensors
   { name: 'soc_entity', label: 'SOC Entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'power_entity', label: 'Power Entity', selector: { entity: { domain: 'sensor' } } },
-
-  { type: 'section', label: 'Status Display (Optional)' },
+  // Status Display (Optional)
   { name: 'state_entity', label: 'State Entity (overrides auto-detect)', selector: { entity: {} } },
   { name: 'mode_entity', label: 'Mode Entity (e.g. input_select)', selector: { entity: { domain: ['input_select', 'select', 'sensor'] } } },
-
-  { type: 'section', label: 'Energy (Entity or Fixed Value)' },
+  // Energy (Entity or Fixed Value)
   { name: 'soc_energy_entity', label: 'SOC Energy Entity', selector: { entity: { domain: 'sensor' } } },
-
-  { type: 'section', label: 'Capacity (Entity or Fixed Value)' },
+  // Capacity (Entity or Fixed Value)
   { name: 'capacity_entity', label: 'Capacity Entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'capacity', label: 'OR Fixed Capacity (kWh)', selector: { number: { min: 0, max: 1000, step: 0.1, mode: 'box' } } },
-
-  { type: 'section', label: 'Reserve (Entity or Fixed Value)' },
+  // Reserve (Entity or Fixed Value)
   { name: 'reserve_entity', label: 'Reserve Entity', selector: { entity: { domain: ['sensor', 'number'] } } },
   { name: 'reserve', label: 'OR Fixed Reserve (%)', selector: { number: { min: 0, max: 100, mode: 'box' } } },
-
-  { type: 'section', label: 'Rates (Entity or Fixed Value)' },
+  // Rates (Entity or Fixed Value)
   { name: 'charge_rate_entity', label: 'Max Charge Rate Entity', selector: { entity: { domain: ['sensor', 'number'] } } },
   { name: 'charge_rate', label: 'OR Fixed Max Charge Rate (W)', selector: { number: { min: 0, max: 50000, mode: 'box' } } },
   { name: 'discharge_rate_entity', label: 'Max Discharge Rate Entity', selector: { entity: { domain: ['sensor', 'number'] } } },
@@ -623,7 +611,7 @@ const ACTIONS_SCHEMA = [
 function getSchemaForTab(tabId) {
   switch (tabId) {
     case 'general': return GENERAL_SCHEMA;
-    case 'entities': return ENTITIES_SCHEMA.filter(s => s.type !== 'section');
+    case 'entities': return ENTITIES_SCHEMA;
     case 'actions': return ACTIONS_SCHEMA;
     case 'soc': return SOC_SCHEMA;
     case 'icons': return ICONS_SCHEMA;
@@ -735,6 +723,28 @@ class UniversalBatteryCard extends LitElement {
     this._holdTimer = null;
     this._lastTap = 0;
     this._holdTriggered = false;
+    // Bind methods for event listeners
+    this._handleTapStart = this._handleTapStart.bind(this);
+    this._handleTapEnd = this._handleTapEnd.bind(this);
+    this._handleTapCancel = this._handleTapCancel.bind(this);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener('touchstart', this._handleTapStart, { passive: true });
+    this.addEventListener('touchend', this._handleTapEnd, { passive: true });
+    this.addEventListener('touchcancel', this._handleTapCancel, { passive: true });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.removeEventListener('touchstart', this._handleTapStart);
+    this.removeEventListener('touchend', this._handleTapEnd);
+    this.removeEventListener('touchcancel', this._handleTapCancel);
+    if (this._holdTimer) {
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+    }
   }
 
   setConfig(config) {
@@ -954,9 +964,6 @@ class UniversalBatteryCard extends LitElement {
         @mousedown=${this._handleTapStart}
         @mouseup=${this._handleTapEnd}
         @mouseleave=${this._handleTapCancel}
-        @touchstart=${this._handleTapStart}
-        @touchend=${this._handleTapEnd}
-        @touchcancel=${this._handleTapCancel}
       >
         <div class="card-header">
           <div class="header-title">${this._config.name} | ${statusText}</div>
@@ -1032,9 +1039,12 @@ class UniversalBatteryCard extends LitElement {
       return '';
     }
 
+    const chargeRateFormatted = stats.chargeRateW !== null ? formatPower(stats.chargeRateW) : null;
+    const dischargeRateFormatted = stats.dischargeRateW !== null ? formatPower(stats.dischargeRateW) : null;
+
     return html`
       <div class="rates-section">
-        ${stats.chargeRateW !== null ? html`
+        ${chargeRateFormatted ? html`
           <div class="rate-item">
             <div class="rate-header">
               <span class="rate-label">Charge Rate</span>
@@ -1043,10 +1053,10 @@ class UniversalBatteryCard extends LitElement {
             <div class="rate-bar">
               <div class="rate-bar-fill charge" style="width: ${stats.chargeRatePercent ?? 0}%"></div>
             </div>
-            <div class="rate-value">${formatPower(stats.chargeRateW).value} ${formatPower(stats.chargeRateW).unit} max</div>
+            <div class="rate-value">${chargeRateFormatted.value} ${chargeRateFormatted.unit} max</div>
           </div>
         ` : ''}
-        ${stats.dischargeRateW !== null ? html`
+        ${dischargeRateFormatted ? html`
           <div class="rate-item">
             <div class="rate-header">
               <span class="rate-label">Discharge Rate</span>
@@ -1055,7 +1065,7 @@ class UniversalBatteryCard extends LitElement {
             <div class="rate-bar">
               <div class="rate-bar-fill discharge" style="width: ${stats.dischargeRatePercent ?? 0}%"></div>
             </div>
-            <div class="rate-value">${formatPower(stats.dischargeRateW).value} ${formatPower(stats.dischargeRateW).unit} max</div>
+            <div class="rate-value">${dischargeRateFormatted.value} ${dischargeRateFormatted.unit} max</div>
           </div>
         ` : ''}
       </div>
