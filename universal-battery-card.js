@@ -169,6 +169,36 @@ function fireEvent(node, type, detail = {}) {
   node.dispatchEvent(new CustomEvent(type, { bubbles: true, composed: true, detail }));
 }
 
+function handleAction(node, hass, config, action) {
+  if (!action || action.action === 'none') return;
+
+  switch (action.action) {
+    case 'more-info':
+      fireEvent(node, 'hass-more-info', { entityId: action.entity || config.soc_entity });
+      break;
+    case 'navigate':
+      if (action.navigation_path) {
+        window.history.pushState(null, '', action.navigation_path);
+        fireEvent(window, 'location-changed');
+      }
+      break;
+    case 'url':
+      if (action.url_path) {
+        window.open(action.url_path, action.new_tab ? '_blank' : '_self');
+      }
+      break;
+    case 'call-service':
+      if (action.service) {
+        const [domain, service] = action.service.split('.');
+        hass.callService(domain, service, action.service_data || {}, action.target || {});
+      }
+      break;
+    case 'fire-dom-event':
+      fireEvent(node, 'll-custom', action);
+      break;
+  }
+}
+
 // ============================================================================
 // STYLES
 // ============================================================================
@@ -181,6 +211,7 @@ const cardStyles = css`
 
   ha-card {
     padding: 16px;
+    cursor: pointer;
   }
 
   .card-header {
@@ -349,6 +380,7 @@ const editorStyles = css`
 const EDITOR_TABS = [
   { id: 'general', label: 'General' },
   { id: 'entities', label: 'Entities' },
+  { id: 'actions', label: 'Actions' },
   { id: 'soc', label: 'SOC Colors' },
   { id: 'icons', label: 'Icons' },
   { id: 'filters', label: 'Filters' },
@@ -409,10 +441,35 @@ const FILTERS_SCHEMA = [
   { name: 'trickle_charge_threshold', label: 'Filter Threshold (W)', selector: { number: { min: 0, max: 100, mode: 'slider' } } },
 ];
 
+const ACTIONS_SCHEMA = [
+  {
+    name: 'tap_action',
+    label: 'Tap Action',
+    selector: {
+      ui_action: {}
+    },
+  },
+  {
+    name: 'hold_action',
+    label: 'Hold Action',
+    selector: {
+      ui_action: {}
+    },
+  },
+  {
+    name: 'double_tap_action',
+    label: 'Double Tap Action',
+    selector: {
+      ui_action: {}
+    },
+  },
+];
+
 function getSchemaForTab(tabId) {
   switch (tabId) {
     case 'general': return GENERAL_SCHEMA;
     case 'entities': return ENTITIES_SCHEMA.filter(s => s.type !== 'section');
+    case 'actions': return ACTIONS_SCHEMA;
     case 'soc': return SOC_SCHEMA;
     case 'icons': return ICONS_SCHEMA;
     case 'filters': return FILTERS_SCHEMA;
@@ -513,12 +570,61 @@ class UniversalBatteryCard extends LitElement {
     return { type: 'custom:universal-battery-card', name: 'Battery', soc_entity: '', power_entity: '' };
   }
 
+  constructor() {
+    super();
+    this._holdTimer = null;
+    this._lastTap = 0;
+    this._holdTriggered = false;
+  }
+
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...DEFAULT_CONFIG, ...config };
   }
 
   getCardSize() { return 3; }
+
+  _handleTapStart(e) {
+    this._holdTriggered = false;
+    this._holdTimer = setTimeout(() => {
+      this._holdTriggered = true;
+      if (this._config.hold_action) {
+        handleAction(this, this.hass, this._config, this._config.hold_action);
+      }
+    }, 500);
+  }
+
+  _handleTapEnd(e) {
+    if (this._holdTimer) {
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+    }
+
+    if (this._holdTriggered) {
+      this._holdTriggered = false;
+      return;
+    }
+
+    const now = Date.now();
+    if (now - this._lastTap < 300 && this._config.double_tap_action) {
+      handleAction(this, this.hass, this._config, this._config.double_tap_action);
+      this._lastTap = 0;
+    } else {
+      this._lastTap = now;
+      setTimeout(() => {
+        if (this._lastTap === now && this._config.tap_action) {
+          handleAction(this, this.hass, this._config, this._config.tap_action);
+        }
+      }, 300);
+    }
+  }
+
+  _handleTapCancel() {
+    if (this._holdTimer) {
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+    }
+  }
 
   _calculateStats() {
     if (!this.hass || !this._config) return null;
@@ -655,7 +761,14 @@ class UniversalBatteryCard extends LitElement {
     }
 
     return html`
-      <ha-card>
+      <ha-card
+        @mousedown=${this._handleTapStart}
+        @mouseup=${this._handleTapEnd}
+        @mouseleave=${this._handleTapCancel}
+        @touchstart=${this._handleTapStart}
+        @touchend=${this._handleTapEnd}
+        @touchcancel=${this._handleTapCancel}
+      >
         <div class="card-header">
           <div class="header-title">${this._config.name} | ${statusText}</div>
           ${subtitle ? html`<div class="header-subtitle">${subtitle}</div>` : ''}
@@ -748,7 +861,7 @@ window.customCards.push({
 });
 
 console.info(
-  `%c UNIVERSAL-BATTERY-CARD %c v1.2.0 `,
+  `%c UNIVERSAL-BATTERY-CARD %c v1.3.0 `,
   'color: white; background: #3498db; font-weight: bold;',
   'color: #3498db; background: white; font-weight: bold;'
 );
