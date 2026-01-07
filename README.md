@@ -7,10 +7,12 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 - **SOC Display**: Battery state of charge percentage with color-coded icon
 - **Energy Display**: Current battery energy in Wh/kWh
 - **Power Flow**: Real-time charge/discharge power with direction indicator
-- **Time Estimates**: Estimated time to full charge or reserve level
-- **Daily Statistics**: Today's charge and discharge totals
-- **Rate Indicators**: Current charge/discharge rate as percentage of maximum
+- **Time Estimates**: Estimated time to target and ETA
 - **Color Thresholds**: 5 customizable SOC levels with individual colors
+- **Custom Status**: Optional entity for custom state text display
+- **Mode Display**: Optional entity to show current battery mode
+- **Fixed Values**: Use entities or fixed values for capacity, reserve, and rates
+- **Tap Actions**: Configurable tap, hold, and double-tap actions
 - **Trickle Charge Filter**: Filter out small power fluctuations
 - **Custom Icons**: Configurable icons for charging, discharging, and idle states
 - **Visual Editor**: Full point-and-click configuration UI
@@ -22,14 +24,14 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 1. Open HACS in your Home Assistant instance
 2. Click the three dots in the top right corner
 3. Select "Custom repositories"
-4. Add this repository URL with category "Lovelace"
+4. Add this repository URL with category "Dashboard"
 5. Search for "Universal Battery Card" and install
 
 ### Manual Installation
 
 1. Download `universal-battery-card.js` from the latest release
 2. Copy to `config/www/universal-battery-card.js`
-3. Add resource in Lovelace:
+3. Add resource in Dashboard settings or via YAML:
    ```yaml
    resources:
      - url: /local/universal-battery-card.js
@@ -40,24 +42,35 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 
 ### Required Entities
 
-| Entity | Description |
+| Option | Description |
 |--------|-------------|
 | `soc_entity` | Sensor providing battery state of charge (%) |
 | `power_entity` | Sensor providing battery power (W). Positive = charging, negative = discharging |
 
 ### Optional Entities
 
-| Entity | Description |
+| Option | Description |
 |--------|-------------|
-| `soc_energy_entity` | Current battery energy (Wh/kWh) |
-| `capacity_entity` | Total battery capacity |
-| `charge_rate_entity` | Maximum charge rate |
-| `discharge_rate_entity` | Maximum discharge rate |
-| `reserve_entity` | Battery reserve percentage |
-| `daily_charge_entity` | Today's charge energy total |
-| `daily_discharge_entity` | Today's discharge energy total |
+| `state_entity` | Custom state text (overrides auto-detected Charging/Discharging/Idle) |
+| `mode_entity` | Battery mode display (e.g., from input_select) |
+| `soc_energy_entity` | Current battery energy in Wh/kWh |
+| `capacity_entity` | Total battery capacity (or use fixed `capacity`) |
+| `reserve_entity` | Battery reserve percentage (or use fixed `reserve`) |
+| `charge_rate_entity` | Max charge rate (or use fixed `charge_rate`) |
+| `discharge_rate_entity` | Max discharge rate (or use fixed `discharge_rate`) |
 
-### Example YAML Configuration
+### Fixed Values
+
+Instead of entities, you can set fixed values:
+
+| Option | Description |
+|--------|-------------|
+| `capacity` | Fixed capacity in kWh |
+| `reserve` | Fixed reserve percentage |
+| `charge_rate` | Fixed max charge rate in W |
+| `discharge_rate` | Fixed max discharge rate in W |
+
+### Example Configuration
 
 ```yaml
 type: custom:universal-battery-card
@@ -65,12 +78,10 @@ name: Home Battery
 soc_entity: sensor.battery_soc
 power_entity: sensor.battery_power
 soc_energy_entity: sensor.battery_soc_kwh
-capacity_entity: sensor.battery_capacity
-charge_rate_entity: number.battery_max_charge
-discharge_rate_entity: number.battery_max_discharge
-reserve_entity: number.battery_reserve
-daily_charge_entity: sensor.battery_charge_today
-daily_discharge_entity: sensor.battery_discharge_today
+capacity: 5.2
+reserve: 4
+state_entity: sensor.battery_state
+mode_entity: input_select.battery_mode
 ```
 
 ### Minimal Configuration
@@ -82,16 +93,6 @@ soc_entity: sensor.battery_soc
 power_entity: sensor.battery_power
 ```
 
-### Display Options
-
-```yaml
-display_type: 2           # 0=Wh, 1=kWh, 2=Dynamic
-decimal_places: 2
-display_abs_power: false  # Show power without +/- sign
-show_rates: true          # Show charge/discharge rate bars
-show_daily_energy: true   # Show daily energy statistics
-```
-
 ### SOC Color Thresholds
 
 ```yaml
@@ -101,24 +102,37 @@ soc_threshold_medium: 40
 soc_threshold_low: 20
 
 # RGB colors (arrays)
-soc_colour_very_high: [0, 69, 23]
-soc_colour_high: [67, 160, 71]
+soc_colour_very_high: [0, 128, 0]
+soc_colour_high: [0, 128, 0]
 soc_colour_medium: [255, 166, 0]
 soc_colour_low: [219, 68, 55]
-soc_colour_very_low: [94, 0, 0]
-
-# Or use theme variables
-soc_colour_input: theme_var
-soc_colour_very_high: --success-color
+soc_colour_very_low: [139, 0, 0]
 ```
+
+Note: "Very Low" color applies to any SOC below the "Low" threshold.
 
 ### Custom Icons
 
 ```yaml
 icon_charging: mdi:lightning-bolt
-icon_discharging: mdi:home-battery
+icon_discharging: mdi:home-export-outline
 icon_idle: mdi:sleep
 ```
+
+### Tap Actions
+
+```yaml
+tap_action:
+  action: more-info
+  entity: sensor.battery_soc
+hold_action:
+  action: navigate
+  navigation_path: /lovelace/energy
+double_tap_action:
+  action: none
+```
+
+Supported actions: `more-info`, `navigate`, `url`, `call-service`, `none`
 
 ### Trickle Charge Filter
 
@@ -127,23 +141,14 @@ enable_trickle_charge_filter: true
 trickle_charge_threshold: 25  # Watts
 ```
 
-### Depth of Discharge Settings
-
-```yaml
-custom_dod_enabled: true
-custom_dod_percent: 90        # 90% usable capacity
-calculate_reserve_from_dod: true
-display_custom_dod_stats: true
-```
-
 ## Visual Editor
 
-The card includes a full visual configuration editor accessible through the Home Assistant UI. Click "Edit" on any card to access tabs for:
+The card includes a full visual configuration editor. Click "Edit" on any card to access tabs for:
 
-- **General**: Card name
-- **Entities**: All sensor entity pickers
+- **General**: Card name, decimal places
+- **Entities**: All sensor/entity pickers and fixed values
+- **Actions**: Tap, hold, and double-tap actions
 - **SOC Colors**: Threshold percentages and colors
-- **Display**: Units, decimal places, visibility toggles
 - **Icons**: Custom status icons
 - **Filters**: Trickle charge settings
 
@@ -155,7 +160,7 @@ To modify, simply edit `universal-battery-card.js` and copy to your Home Assista
 
 ## License
 
-MIT
+MIT - See [LICENSE](LICENSE) file.
 
 ## Credits
 
