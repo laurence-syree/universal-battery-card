@@ -210,7 +210,7 @@ const cardStyles = css`
   }
 
   ha-card {
-    padding: 16px;
+    padding: 12px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: filter 0.2s ease;
@@ -226,7 +226,7 @@ const cardStyles = css`
 
   .card-header {
     text-align: center;
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .header-title {
@@ -245,7 +245,7 @@ const cardStyles = css`
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 12px;
+    margin-top: 8px;
   }
 
   .status-icon-section {
@@ -274,11 +274,11 @@ const cardStyles = css`
   }
 
   .battery-icon-wrapper ha-icon {
-    --mdc-icon-size: 64px;
+    --mdc-icon-size: 56px;
   }
 
   .soc-percent {
-    font-size: 2.2em;
+    font-size: 2em;
     font-weight: bold;
   }
 
@@ -305,7 +305,7 @@ const cardStyles = css`
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: 8px;
+    gap: 4px;
     min-width: 100px;
   }
 
@@ -343,8 +343,8 @@ const cardStyles = css`
   .rates-section {
     display: flex;
     gap: 16px;
-    margin-top: 12px;
-    padding-top: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
   }
 
