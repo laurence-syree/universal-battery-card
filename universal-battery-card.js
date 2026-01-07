@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '1.4.4';
+const VERSION = '1.5.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -28,6 +28,7 @@ const DEFAULT_CONFIG = {
   icon_idle: 'mdi:sleep',
   enable_trickle_charge_filter: false,
   trickle_charge_threshold: 25,
+  compact: false,
 };
 
 // ============================================================================
@@ -494,6 +495,61 @@ const cardStyles = css`
     --mdc-icon-size: 48px;
     margin-bottom: 8px;
   }
+
+  .skeleton {
+    opacity: 0.5;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Compact mode styles */
+  ha-card.compact {
+    padding: 8px;
+  }
+
+  ha-card.compact .header-title {
+    font-size: 0.75em;
+  }
+
+  ha-card.compact .header-subtitle {
+    display: none;
+  }
+
+  ha-card.compact .status-icon-section {
+    width: 40px;
+  }
+
+  ha-card.compact .status-icon-section ha-icon {
+    --mdc-icon-size: 28px;
+  }
+
+  ha-card.compact .battery-icon-wrapper ha-icon {
+    --mdc-icon-size: 36px;
+  }
+
+  ha-card.compact .soc-percent {
+    font-size: 1.4em;
+  }
+
+  ha-card.compact .soc-energy {
+    display: none;
+  }
+
+  ha-card.compact .time-section {
+    display: none;
+  }
+
+  ha-card.compact .rates-section {
+    display: none;
+  }
+
+  ha-card.compact .battery-layout {
+    margin-top: 4px;
+  }
 `;
 
 const editorStyles = css`
@@ -537,6 +593,7 @@ const EDITOR_TABS = [
 const GENERAL_SCHEMA = [
   { name: 'name', label: 'Card Name', selector: { text: {} } },
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
+  { name: 'compact', label: 'Compact Mode', selector: { boolean: {} } },
 ];
 
 const ENTITIES_SCHEMA = [
@@ -753,6 +810,7 @@ class UniversalBatteryCard extends LitElement {
   }
 
   getCardSize() {
+    if (this._config?.compact) return 2;
     const hasRates = this._config?.charge_rate_entity || this._config?.charge_rate ||
                      this._config?.discharge_rate_entity || this._config?.discharge_rate;
     return hasRates ? 4 : 3;
@@ -906,6 +964,11 @@ class UniversalBatteryCard extends LitElement {
   render() {
     if (!this.hass || !this._config) return html``;
 
+    // Show loading state if hass.states is empty (initial load)
+    if (Object.keys(this.hass.states).length === 0) {
+      return this._renderLoading();
+    }
+
     // Check required entities
     if (!this._config.soc_entity || !entityExists(this.hass, this._config.soc_entity)) {
       return this._renderError('SOC Entity not configured or not found');
@@ -961,6 +1024,7 @@ class UniversalBatteryCard extends LitElement {
 
     return html`
       <ha-card
+        class="${this._config.compact ? 'compact' : ''}"
         @mousedown=${this._handleTapStart}
         @mouseup=${this._handleTapEnd}
         @mouseleave=${this._handleTapCancel}
@@ -1078,6 +1142,35 @@ class UniversalBatteryCard extends LitElement {
         <div class="error-container">
           <ha-icon icon="mdi:alert-circle"></ha-icon>
           <div>${message}</div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderLoading() {
+    return html`
+      <ha-card>
+        <div class="card-header">
+          <div class="header-title">${this._config.name} | Loading...</div>
+        </div>
+        <div class="battery-layout">
+          <div class="status-icon-section">
+            <ha-icon icon="mdi:battery-unknown" class="skeleton"></ha-icon>
+          </div>
+          <div class="battery-center">
+            <div class="battery-visual">
+              <div class="battery-icon-wrapper skeleton">
+                <ha-icon icon="mdi:battery-50"></ha-icon>
+              </div>
+              <span class="soc-percent skeleton">--%</span>
+            </div>
+            <div class="power-display skeleton">-- W</div>
+          </div>
+          <div class="time-section">
+            <div class="time-item">
+              <div class="time-value disabled">--:--:--</div>
+            </div>
+          </div>
         </div>
       </ha-card>
     `;
