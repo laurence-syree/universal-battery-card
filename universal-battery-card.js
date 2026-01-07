@@ -617,9 +617,10 @@ class UniversalBatteryCard extends LitElement {
     const batteryIcon = getBatteryIcon(stats.socPercent);
 
     // Get state text - from entity or auto-detect
-    let statusText = stats.status.toUpperCase();
+    let statusText = stats.status.charAt(0).toUpperCase() + stats.status.slice(1);
     if (this._config.state_entity && this.hass.states[this._config.state_entity]) {
-      statusText = this.hass.states[this._config.state_entity].state.toUpperCase();
+      const stateVal = this.hass.states[this._config.state_entity].state;
+      statusText = stateVal.charAt(0).toUpperCase() + stateVal.slice(1).toLowerCase();
     }
 
     // Get mode text from entity
