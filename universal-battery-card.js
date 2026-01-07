@@ -487,7 +487,9 @@ class UniversalBatteryCardEditor extends LitElement {
   }
 }
 
-customElements.define('universal-battery-card-editor', UniversalBatteryCardEditor);
+if (!customElements.get('universal-battery-card-editor')) {
+  customElements.define('universal-battery-card-editor', UniversalBatteryCardEditor);
+}
 
 // ============================================================================
 // MAIN CARD
@@ -732,7 +734,9 @@ class UniversalBatteryCard extends LitElement {
   }
 }
 
-customElements.define('universal-battery-card', UniversalBatteryCard);
+if (!customElements.get('universal-battery-card')) {
+  customElements.define('universal-battery-card', UniversalBatteryCard);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
@@ -743,7 +747,7 @@ window.customCards.push({
 });
 
 console.info(
-  `%c UNIVERSAL-BATTERY-CARD %c v1.1.0 `,
+  `%c UNIVERSAL-BATTERY-CARD %c v1.2.0 `,
   'color: white; background: #3498db; font-weight: bold;',
   'color: #3498db; background: white; font-weight: bold;'
 );
