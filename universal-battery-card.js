@@ -189,13 +189,13 @@ const cardStyles = css`
   }
 
   .header-title {
-    font-size: 1em;
+    font-size: 0.85em;
     font-weight: bold;
     color: var(--ubc-text-color);
   }
 
   .header-subtitle {
-    font-size: 0.8em;
+    font-size: 0.7em;
     color: var(--ubc-secondary-text);
     margin-top: 2px;
   }
