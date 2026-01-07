@@ -340,6 +340,58 @@ const cardStyles = css`
     opacity: 0.6;
   }
 
+  .rates-section {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
+  }
+
+  .rate-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rate-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .rate-label {
+    font-size: 0.75em;
+    color: var(--ubc-secondary-text);
+  }
+
+  .rate-value {
+    font-size: 0.75em;
+    color: var(--ubc-text-color);
+  }
+
+  .rate-bar {
+    height: 4px;
+    background: var(--divider-color, rgba(255,255,255,0.1));
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .rate-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .rate-bar-fill.charge {
+    background: var(--success-color, #43a047);
+  }
+
+  .rate-bar-fill.discharge {
+    background: var(--warning-color, #ffa000);
+  }
+
   .error-container {
     padding: 16px;
     text-align: center;
@@ -705,6 +757,27 @@ class UniversalBatteryCard extends LitElement {
       }
     }
 
+    // Charge/Discharge rates (entity or fixed, fixed is in W)
+    const chargeRateData = getEntityOrFixedValue(this.hass, config, 'charge_rate_entity', 'charge_rate', 'W');
+    let chargeRateW = null;
+    let chargeRatePercent = null;
+    if (chargeRateData.available && chargeRateData.value !== null) {
+      chargeRateW = chargeRateData.isFixed ? chargeRateData.value : normalizeToWh(chargeRateData.value, chargeRateData.unit);
+      if (power > 0 && chargeRateW > 0) {
+        chargeRatePercent = Math.min(100, (power / chargeRateW) * 100);
+      }
+    }
+
+    const dischargeRateData = getEntityOrFixedValue(this.hass, config, 'discharge_rate_entity', 'discharge_rate', 'W');
+    let dischargeRateW = null;
+    let dischargeRatePercent = null;
+    if (dischargeRateData.available && dischargeRateData.value !== null) {
+      dischargeRateW = dischargeRateData.isFixed ? dischargeRateData.value : normalizeToWh(dischargeRateData.value, dischargeRateData.unit);
+      if (power < 0 && dischargeRateW > 0) {
+        dischargeRatePercent = Math.min(100, (Math.abs(power) / dischargeRateW) * 100);
+      }
+    }
+
     return {
       socPercent: socValue.value,
       socEnergyWh,
@@ -715,6 +788,10 @@ class UniversalBatteryCard extends LitElement {
       reserveWh,
       timeToTarget,
       targetPercent,
+      chargeRateW,
+      chargeRatePercent,
+      dischargeRateW,
+      dischargeRatePercent,
       decimals,
     };
   }
@@ -847,7 +924,44 @@ class UniversalBatteryCard extends LitElement {
             `}
           </div>
         </div>
+        ${this._renderRates(stats)}
       </ha-card>
+    `;
+  }
+
+  _renderRates(stats) {
+    // Only show if at least one rate is configured
+    if (stats.chargeRateW === null && stats.dischargeRateW === null) {
+      return '';
+    }
+
+    return html`
+      <div class="rates-section">
+        ${stats.chargeRateW !== null ? html`
+          <div class="rate-item">
+            <div class="rate-header">
+              <span class="rate-label">Charge Rate</span>
+              <span class="rate-value">${Math.round(stats.chargeRatePercent ?? 0)}%</span>
+            </div>
+            <div class="rate-bar">
+              <div class="rate-bar-fill charge" style="width: ${stats.chargeRatePercent ?? 0}%"></div>
+            </div>
+            <div class="rate-value">${formatPower(stats.chargeRateW).value} ${formatPower(stats.chargeRateW).unit} max</div>
+          </div>
+        ` : ''}
+        ${stats.dischargeRateW !== null ? html`
+          <div class="rate-item">
+            <div class="rate-header">
+              <span class="rate-label">Discharge Rate</span>
+              <span class="rate-value">${Math.round(stats.dischargeRatePercent ?? 0)}%</span>
+            </div>
+            <div class="rate-bar">
+              <div class="rate-bar-fill discharge" style="width: ${stats.dischargeRatePercent ?? 0}%"></div>
+            </div>
+            <div class="rate-value">${formatPower(stats.dischargeRateW).value} ${formatPower(stats.dischargeRateW).unit} max</div>
+          </div>
+        ` : ''}
+      </div>
     `;
   }
 
@@ -876,7 +990,7 @@ window.customCards.push({
 });
 
 console.info(
-  `%c UNIVERSAL-BATTERY-CARD %c v1.3.0 `,
+  `%c UNIVERSAL-BATTERY-CARD %c v1.4.0 `,
   'color: white; background: #3498db; font-weight: bold;',
   'color: #3498db; background: white; font-weight: bold;'
 );
