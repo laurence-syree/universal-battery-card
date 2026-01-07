@@ -2,6 +2,8 @@
 
 A generic Home Assistant Lovelace card for displaying battery information from **any** home battery system. Unlike vendor-specific cards, this card requires manual configuration of all sensors, making it compatible with any battery integration.
 
+![Example](example.webp)
+
 ## Features
 
 - **SOC Display**: Battery state of charge percentage with color-coded icon
