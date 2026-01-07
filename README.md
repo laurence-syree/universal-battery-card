@@ -1,7 +1,5 @@
 # Universal Battery Card
 
-> **WIP**: This project is a work in progress. Features may be incomplete or change.
-
 A generic Home Assistant Lovelace card for displaying battery information from **any** home battery system. Unlike vendor-specific cards, this card requires manual configuration of all sensors, making it compatible with any battery integration.
 
 ## Features
@@ -161,4 +159,4 @@ MIT
 
 ## Credits
 
-Inspired by [givtcp-battery-card](https://github.com/Codegnosis/givtcp-battery-card) by Codegnosis.
+This project is based on [givtcp-battery-card](https://github.com/Codegnosis/givtcp-battery-card) by [Codegnosis](https://github.com/Codegnosis). The original card was designed specifically for GivTCP/GivEnergy systems - this fork removes the vendor-specific dependencies to work with any battery system.
