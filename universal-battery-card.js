@@ -9,6 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
+const VERSION = '1.4.3';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -34,6 +35,15 @@ const DEFAULT_CONFIG = {
 // UTILITY FUNCTIONS
 // ============================================================================
 
+/**
+ * Gets a value from either a fixed config value or an entity state
+ * @param {Object} hass - Home Assistant instance
+ * @param {Object} config - Card configuration
+ * @param {string} entityKey - Config key for entity ID
+ * @param {string} fixedKey - Config key for fixed value
+ * @param {string} [defaultUnit=''] - Default unit if not provided
+ * @returns {{value: number|null, unit: string, available: boolean, isFixed: boolean}}
+ */
 function getEntityOrFixedValue(hass, config, entityKey, fixedKey, defaultUnit = '') {
   // Check for fixed value first
   const fixedValue = config[fixedKey];
@@ -55,6 +65,12 @@ function getEntityOrFixedValue(hass, config, entityKey, fixedKey, defaultUnit = 
   return { value: state, unit, available: true, isFixed: false };
 }
 
+/**
+ * Gets a numeric value from an entity state
+ * @param {Object} hass - Home Assistant instance
+ * @param {string} entityId - Entity ID to read
+ * @returns {{value: number|null, unit: string, available: boolean}}
+ */
 function getEntityValue(hass, entityId) {
   if (!entityId) return { value: null, unit: '', available: false };
   const entity = hass.states[entityId];
@@ -65,16 +81,34 @@ function getEntityValue(hass, entityId) {
   return { value: state, unit, available: true };
 }
 
+/**
+ * Checks if an entity exists in Home Assistant
+ * @param {Object} hass - Home Assistant instance
+ * @param {string} entityId - Entity ID to check
+ * @returns {boolean}
+ */
 function entityExists(hass, entityId) {
   return entityId && entityId in hass.states;
 }
 
-function normalizeToWh(value, unit) {
+/**
+ * Converts kW/kWh values to W/Wh (multiplies by 1000)
+ * @param {number} value - The value to normalize
+ * @param {string} unit - The unit (kW, kWh, W, Wh)
+ * @returns {number} Value in base units (W or Wh)
+ */
+function normalizeUnit(value, unit) {
   const lowerUnit = (unit || '').toLowerCase();
   if (lowerUnit === 'kwh' || lowerUnit === 'kw') return value * 1000;
   return value;
 }
 
+/**
+ * Formats energy value with appropriate unit (Wh or kWh)
+ * @param {number} wh - Energy in watt-hours
+ * @param {number} [decimals=3] - Decimal places for kWh
+ * @returns {{value: string, unit: string}}
+ */
 function formatEnergy(wh, decimals = 3) {
   if (Math.abs(wh) >= 1000) {
     return { value: (wh / 1000).toFixed(decimals), unit: 'kWh' };
@@ -82,6 +116,12 @@ function formatEnergy(wh, decimals = 3) {
   return { value: wh.toFixed(0), unit: 'Wh' };
 }
 
+/**
+ * Formats power value with appropriate unit (W or kW)
+ * @param {number} watts - Power in watts
+ * @param {number} [decimals=0] - Decimal places
+ * @returns {{value: string, unit: string}}
+ */
 function formatPower(watts, decimals = 0) {
   if (Math.abs(watts) >= 1000) {
     return { value: (watts / 1000).toFixed(decimals || 1), unit: 'kW' };
@@ -89,6 +129,11 @@ function formatPower(watts, decimals = 0) {
   return { value: Math.round(watts).toString(), unit: 'W' };
 }
 
+/**
+ * Formats minutes as HH:MM:SS duration string
+ * @param {number|null} minutes - Duration in minutes
+ * @returns {string} Formatted duration or '--:--:--'
+ */
 function formatDuration(minutes) {
   if (minutes === null || minutes < 0) return '--:--:--';
   const hours = Math.floor(minutes / 60);
@@ -98,6 +143,11 @@ function formatDuration(minutes) {
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Calculates and formats estimated time of arrival
+ * @param {number|null} minutes - Minutes from now
+ * @returns {string} Formatted as 'MM/DD HH:MM' or '--/-- --:--'
+ */
 function formatTimeOfArrival(minutes) {
   if (minutes === null || minutes < 0) return '--:--';
   const now = new Date();
@@ -109,6 +159,13 @@ function formatTimeOfArrival(minutes) {
   return `${month}/${day} ${hours}:${mins}`;
 }
 
+/**
+ * Calculates time to reach target energy level
+ * @param {number} currentEnergy - Current energy in Wh
+ * @param {number} targetEnergy - Target energy in Wh
+ * @param {number} powerWatts - Current power (+ charging, - discharging)
+ * @returns {number|null} Minutes to target or null if unreachable
+ */
 function calculateTimeToTarget(currentEnergy, targetEnergy, powerWatts) {
   if (powerWatts === 0) return null;
   const energyDiff = targetEnergy - currentEnergy;
@@ -117,12 +174,24 @@ function calculateTimeToTarget(currentEnergy, targetEnergy, powerWatts) {
   return hours * 60;
 }
 
+/**
+ * Determines battery status from power value
+ * @param {number} power - Power in watts (+ charging, - discharging)
+ * @param {number} [threshold=0] - Minimum power to consider active
+ * @returns {'charging'|'discharging'|'idle'}
+ */
 function getBatteryStatus(power, threshold = 0) {
   if (power > threshold) return 'charging';
   if (power < -threshold) return 'discharging';
   return 'idle';
 }
 
+/**
+ * Gets the color for a SOC percentage based on thresholds
+ * @param {number} socPercent - State of charge percentage
+ * @param {Object} config - Card configuration with threshold/color settings
+ * @returns {string} CSS color value (rgb() or var())
+ */
 function getSocColor(socPercent, config) {
   const thresholds = [
     { threshold: config.soc_threshold_very_high ?? 80, color: config.soc_colour_very_high ?? [0, 128, 0] },
@@ -143,6 +212,12 @@ function getSocColor(socPercent, config) {
   return `rgb(${veryLow[0]}, ${veryLow[1]}, ${veryLow[2]})`;
 }
 
+/**
+ * Gets the MDI icon for a battery status
+ * @param {'charging'|'discharging'|'idle'} status - Battery status
+ * @param {Object} config - Card configuration with icon settings
+ * @returns {string} MDI icon name
+ */
 function getStatusIcon(status, config) {
   switch (status) {
     case 'charging': return config.icon_charging ?? 'mdi:lightning-bolt';
@@ -151,6 +226,11 @@ function getStatusIcon(status, config) {
   }
 }
 
+/**
+ * Gets the battery level icon for a SOC percentage
+ * @param {number} socPercent - State of charge percentage
+ * @returns {string} MDI battery icon name
+ */
 function getBatteryIcon(socPercent) {
   if (socPercent >= 95) return 'mdi:battery';
   if (socPercent >= 85) return 'mdi:battery-90';
@@ -165,10 +245,23 @@ function getBatteryIcon(socPercent) {
   return 'mdi:battery-outline';
 }
 
+/**
+ * Fires a custom DOM event
+ * @param {HTMLElement} node - Element to dispatch from
+ * @param {string} type - Event type name
+ * @param {Object} [detail={}] - Event detail data
+ */
 function fireEvent(node, type, detail = {}) {
   node.dispatchEvent(new CustomEvent(type, { bubbles: true, composed: true, detail }));
 }
 
+/**
+ * Handles tap/hold/double-tap actions
+ * @param {HTMLElement} node - Element that triggered the action
+ * @param {Object} hass - Home Assistant instance
+ * @param {Object} config - Card configuration
+ * @param {Object} action - Action configuration (action, entity, etc.)
+ */
 function handleAction(node, hass, config, action) {
   if (!action || action.action === 'none') return;
 
@@ -649,7 +742,11 @@ class UniversalBatteryCard extends LitElement {
     this._config = { ...DEFAULT_CONFIG, ...config };
   }
 
-  getCardSize() { return 3; }
+  getCardSize() {
+    const hasRates = this._config?.charge_rate_entity || this._config?.charge_rate ||
+                     this._config?.discharge_rate_entity || this._config?.discharge_rate;
+    return hasRates ? 4 : 3;
+  }
 
   _handleTapStart(e) {
     this._holdTriggered = false;
@@ -719,14 +816,14 @@ class UniversalBatteryCard extends LitElement {
     const socEnergyValue = getEntityValue(this.hass, config.soc_energy_entity);
     let socEnergyWh = null;
     if (socEnergyValue.available && socEnergyValue.value !== null) {
-      socEnergyWh = normalizeToWh(socEnergyValue.value, socEnergyValue.unit);
+      socEnergyWh = normalizeUnit(socEnergyValue.value, socEnergyValue.unit);
     }
 
     // Capacity (entity or fixed, fixed is in kWh)
     const capacityData = getEntityOrFixedValue(this.hass, config, 'capacity_entity', 'capacity', 'kWh');
     let capacityWh = null;
     if (capacityData.available && capacityData.value !== null) {
-      capacityWh = capacityData.isFixed ? capacityData.value * 1000 : normalizeToWh(capacityData.value, capacityData.unit);
+      capacityWh = capacityData.isFixed ? capacityData.value * 1000 : normalizeUnit(capacityData.value, capacityData.unit);
     }
 
     // Reserve (entity or fixed, both in %)
@@ -762,7 +859,7 @@ class UniversalBatteryCard extends LitElement {
     let chargeRateW = null;
     let chargeRatePercent = null;
     if (chargeRateData.available && chargeRateData.value !== null) {
-      chargeRateW = chargeRateData.isFixed ? chargeRateData.value : normalizeToWh(chargeRateData.value, chargeRateData.unit);
+      chargeRateW = chargeRateData.isFixed ? chargeRateData.value : normalizeUnit(chargeRateData.value, chargeRateData.unit);
       if (power > 0 && chargeRateW > 0) {
         chargeRatePercent = Math.min(100, (power / chargeRateW) * 100);
       }
@@ -772,7 +869,7 @@ class UniversalBatteryCard extends LitElement {
     let dischargeRateW = null;
     let dischargeRatePercent = null;
     if (dischargeRateData.available && dischargeRateData.value !== null) {
-      dischargeRateW = dischargeRateData.isFixed ? dischargeRateData.value : normalizeToWh(dischargeRateData.value, dischargeRateData.unit);
+      dischargeRateW = dischargeRateData.isFixed ? dischargeRateData.value : normalizeUnit(dischargeRateData.value, dischargeRateData.unit);
       if (power < 0 && dischargeRateW > 0) {
         dischargeRatePercent = Math.min(100, (Math.abs(power) / dischargeRateW) * 100);
       }
@@ -919,7 +1016,7 @@ class UniversalBatteryCard extends LitElement {
                   <ha-icon icon="mdi:clock-outline"></ha-icon>
                   --/-- --:--
                 </div>
-                <div class="time-label">No Load</div>
+                <div class="time-label">No load</div>
               </div>
             `}
           </div>
@@ -990,7 +1087,7 @@ window.customCards.push({
 });
 
 console.info(
-  `%c UNIVERSAL-BATTERY-CARD %c v1.4.1 `,
+  `%c UNIVERSAL-BATTERY-CARD %c v${VERSION} `,
   'color: white; background: #3498db; font-weight: bold;',
   'color: #3498db; background: white; font-weight: bold;'
 );
