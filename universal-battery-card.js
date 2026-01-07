@@ -212,6 +212,11 @@ const cardStyles = css`
   ha-card {
     padding: 16px;
     cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+
+  ha-card:hover {
+    background-color: var(--state-icon-hover-color, rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.05));
   }
 
   .card-header {
