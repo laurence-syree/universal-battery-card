@@ -216,7 +216,7 @@ const cardStyles = css`
   }
 
   ha-card:hover {
-    background-color: var(--state-icon-hover-color, rgba(var(--rgb-primary-text-color, 0, 0, 0), 0.05));
+    background-color: rgba(255, 255, 255, 0.08);
   }
 
   .card-header {
