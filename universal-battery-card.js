@@ -364,6 +364,10 @@ const ENTITIES_SCHEMA = [
   { name: 'soc_entity', label: 'SOC Entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'power_entity', label: 'Power Entity', selector: { entity: { domain: 'sensor' } } },
 
+  { type: 'section', label: 'Status Display (Optional)' },
+  { name: 'state_entity', label: 'State Entity (overrides auto-detect)', selector: { entity: {} } },
+  { name: 'mode_entity', label: 'Mode Entity (e.g. input_select)', selector: { entity: { domain: ['input_select', 'select', 'sensor'] } } },
+
   { type: 'section', label: 'Energy (Entity or Fixed Value)' },
   { name: 'soc_energy_entity', label: 'SOC Energy Entity', selector: { entity: { domain: 'sensor' } } },
 
@@ -609,7 +613,18 @@ class UniversalBatteryCard extends LitElement {
     const socColor = getSocColor(stats.socPercent, this._config);
     const statusIcon = getStatusIcon(stats.status, this._config);
     const batteryIcon = getBatteryIcon(stats.socPercent);
-    const statusText = stats.status.toUpperCase();
+
+    // Get state text - from entity or auto-detect
+    let statusText = stats.status.toUpperCase();
+    if (this._config.state_entity && this.hass.states[this._config.state_entity]) {
+      statusText = this.hass.states[this._config.state_entity].state.toUpperCase();
+    }
+
+    // Get mode text from entity
+    let modeText = null;
+    if (this._config.mode_entity && this.hass.states[this._config.mode_entity]) {
+      modeText = this.hass.states[this._config.mode_entity].state;
+    }
 
     // Format values
     const socEnergyFormatted = stats.socEnergyWh !== null ? formatEnergy(stats.socEnergyWh, stats.decimals) : null;
@@ -630,6 +645,10 @@ class UniversalBatteryCard extends LitElement {
     if (reserveFormatted && stats.reservePercent !== null) {
       if (subtitle) subtitle += ' | ';
       subtitle += `Reserve: ${reserveFormatted.value} ${reserveFormatted.unit} (${Math.round(stats.reservePercent)}%)`;
+    }
+    if (modeText) {
+      if (subtitle) subtitle += ' | ';
+      subtitle += `Mode: ${modeText}`;
     }
 
     return html`
