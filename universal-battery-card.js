@@ -651,7 +651,7 @@ class UniversalBatteryCard extends LitElement {
               <div class="battery-icon-wrapper" style="color: ${socColor}">
                 <ha-icon icon="${batteryIcon}"></ha-icon>
               </div>
-              <span class="soc-percent" style="color: ${socColor}">${Math.round(stats.socPercent)}%</span>
+              <span class="soc-percent" style="color: ${socColor}">${stats.socPercent.toFixed(stats.decimals)}%</span>
             </div>
             ${socEnergyFormatted ? html`
               <div class="soc-energy">${socEnergyFormatted.value} ${socEnergyFormatted.unit}</div>
