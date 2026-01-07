@@ -990,7 +990,7 @@ window.customCards.push({
 });
 
 console.info(
-  `%c UNIVERSAL-BATTERY-CARD %c v1.4.0 `,
+  `%c UNIVERSAL-BATTERY-CARD %c v1.4.1 `,
   'color: white; background: #3498db; font-weight: bold;',
   'color: #3498db; background: white; font-weight: bold;'
 );
