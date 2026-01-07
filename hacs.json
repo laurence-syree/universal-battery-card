@@ -1,5 +1,6 @@
 {
   "name": "Universal Battery Card",
+  "description": "A generic battery card for any Home Assistant battery system with customizable sensors, colors, and actions.",
   "render_readme": true,
   "filename": "universal-battery-card.js",
   "content_in_root": true
