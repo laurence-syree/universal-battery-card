@@ -212,30 +212,16 @@ const cardStyles = css`
   ha-card {
     padding: 16px;
     cursor: pointer;
-    position: relative;
-    overflow: hidden;
     -webkit-tap-highlight-color: transparent;
+    transition: filter 0.2s ease;
   }
 
-  ha-card::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--primary-text-color);
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
+  ha-card:hover {
+    filter: brightness(1.1);
   }
 
-  ha-card:hover::after {
-    opacity: 0.04;
-  }
-
-  ha-card:active::after {
-    opacity: 0.12;
+  ha-card:active {
+    filter: brightness(1.2);
   }
 
   .card-header {
