@@ -15,6 +15,8 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 - **Tap Actions**: Configurable tap, hold, and double-tap actions
 - **Trickle Charge Filter**: Filter out small power fluctuations
 - **Custom Icons**: Configurable icons for charging, discharging, and idle states
+- **Compact Mode**: Reduced height layout for dashboard space optimization
+- **Loading State**: Skeleton UI while waiting for entity data
 - **Visual Editor**: Full point-and-click configuration UI
 
 ## Installation
@@ -141,11 +143,19 @@ enable_trickle_charge_filter: true
 trickle_charge_threshold: 25  # Watts
 ```
 
+### Compact Mode
+
+Enable compact mode for a smaller card that hides time estimates, energy display, and rate bars:
+
+```yaml
+compact: true
+```
+
 ## Visual Editor
 
 The card includes a full visual configuration editor. Click "Edit" on any card to access tabs for:
 
-- **General**: Card name, decimal places
+- **General**: Card name, decimal places, compact mode
 - **Entities**: All sensor/entity pickers and fixed values
 - **Actions**: Tap, hold, and double-tap actions
 - **SOC Colors**: Threshold percentages and colors
