@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '1.5.0';
+const VERSION = '2.0.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -29,6 +29,12 @@ const DEFAULT_CONFIG = {
   enable_trickle_charge_filter: false,
   trickle_charge_threshold: 25,
   compact: false,
+  // New v2.0 options
+  temp_entity: null,
+  cycles_entity: null,
+  health_entity: null,
+  cutoff_entity: null,
+  cutoff: null,
 };
 
 // ============================================================================
@@ -300,10 +306,13 @@ const cardStyles = css`
   :host {
     --ubc-text-color: var(--primary-text-color);
     --ubc-secondary-text: var(--secondary-text-color);
+    --ubc-gauge-bg: var(--divider-color, #3a3a3a);
+    --ubc-gauge-size: 180px;
+    --ubc-power-gauge-size: 140px;
   }
 
   ha-card {
-    padding: 12px;
+    padding: 16px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     transition: filter 0.2s ease;
@@ -317,174 +326,259 @@ const cardStyles = css`
     filter: brightness(1.2);
   }
 
-  .card-header {
-    text-align: center;
-    margin-bottom: 2px;
-  }
-
-  .header-title {
-    font-size: 0.85em;
-    font-weight: bold;
-    color: var(--ubc-text-color);
-  }
-
-  .header-subtitle {
-    font-size: 0.7em;
-    color: var(--ubc-secondary-text);
-    margin-top: 2px;
-  }
-
-  .battery-layout {
+  /* Header Section */
+  .header {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    margin-top: 8px;
+    align-items: flex-start;
+    margin-bottom: 16px;
   }
 
-  .status-icon-section {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 60px;
-  }
-
-  .status-icon-section ha-icon {
-    --mdc-icon-size: 40px;
-    color: var(--ubc-secondary-text);
-  }
-
-  .battery-center {
+  .header-left {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    flex: 1;
+    gap: 4px;
   }
 
-  .battery-visual {
+  .title-row {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .battery-icon-wrapper ha-icon {
-    --mdc-icon-size: 56px;
-  }
-
-  .soc-percent {
-    font-size: 2em;
+  .title {
+    font-size: 1.4em;
     font-weight: bold;
-  }
-
-  .soc-energy {
-    font-size: 1em;
     color: var(--ubc-text-color);
-    margin-top: 2px;
   }
 
-  .power-display {
+  .mode {
+    font-size: 1em;
+    color: var(--ubc-secondary-text);
+  }
+
+  .title-row ha-icon {
+    --mdc-icon-size: 18px;
+    color: var(--ubc-secondary-text);
+    opacity: 0.7;
+  }
+
+  .state-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 4px;
-    color: var(--ubc-secondary-text);
-    font-size: 0.95em;
-  }
-
-  .power-display ha-icon {
-    --mdc-icon-size: 16px;
-  }
-
-  .time-section {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
-    min-width: 100px;
-  }
-
-  .time-item {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }
-
-  .time-value {
-    display: flex;
-    align-items: center;
-    gap: 4px;
     font-size: 1.1em;
-    font-weight: 500;
-    font-family: monospace;
     color: var(--ubc-text-color);
   }
 
-  .time-value ha-icon {
-    --mdc-icon-size: 16px;
+  .state-row ha-icon {
+    --mdc-icon-size: 20px;
     color: var(--ubc-secondary-text);
   }
 
-  .time-label {
-    font-size: 0.75em;
+  .capacity-row {
+    font-size: 0.9em;
     color: var(--ubc-secondary-text);
   }
 
-  .time-value.disabled {
-    color: var(--ubc-secondary-text);
-    opacity: 0.6;
-  }
-
-  .rates-section {
-    display: flex;
-    gap: 16px;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
-  }
-
-  .rate-item {
-    flex: 1;
+  /* Stats Panel */
+  .stats-panel {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    align-items: flex-end;
+    gap: 2px;
   }
 
-  .rate-header {
+  .stat {
+    font-size: 0.85em;
+    color: var(--ubc-secondary-text);
+  }
+
+  .stat span {
+    color: var(--ubc-text-color);
+    font-weight: 500;
+  }
+
+  /* Gauges Container */
+  .gauges-container {
     display: flex;
-    justify-content: space-between;
+    justify-content: space-around;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 0;
+  }
+
+  /* Gauge Base Styles */
+  .gauge-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     align-items: center;
   }
 
-  .rate-label {
+  .gauge {
+    position: relative;
+    width: var(--ubc-gauge-size);
+    height: var(--ubc-gauge-size);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .gauge::before {
+    content: '';
+    position: absolute;
+    inset: 12%;
+    border-radius: 50%;
+    background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+    z-index: 1;
+  }
+
+  .gauge-center {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* Main SOC Gauge */
+  .main-gauge .gauge-center ha-icon {
+    --mdc-icon-size: 48px;
+  }
+
+  .main-gauge .soc-value {
+    font-size: 2.5em;
+    font-weight: bold;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .main-gauge .energy-value {
+    font-size: 1.1em;
+    color: var(--ubc-text-color);
+    margin-top: 4px;
+  }
+
+  /* Gauge Labels (Reserve/Cutoff) */
+  .gauge-labels {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+  }
+
+  .gauge-label {
+    position: absolute;
     font-size: 0.75em;
     color: var(--ubc-secondary-text);
+    white-space: nowrap;
   }
 
-  .rate-value {
-    font-size: 0.75em;
-    color: var(--ubc-text-color);
+  .gauge-label.reserve {
+    top: 50%;
+    left: -10px;
+    transform: translateX(-100%) translateY(-50%);
   }
 
-  .rate-bar {
-    height: 4px;
-    background: var(--divider-color, rgba(255,255,255,0.1));
+  .gauge-label.cutoff {
+    top: 15%;
+    right: -10px;
+    transform: translateX(100%);
+  }
+
+  /* Gauge Markers */
+  .marker {
+    position: absolute;
+    width: 4px;
+    height: 14px;
     border-radius: 2px;
-    overflow: hidden;
+    top: 0;
+    left: 50%;
+    margin-left: -2px;
+    z-index: 3;
   }
 
-  .rate-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.3s ease;
+  .marker.reserve {
+    background: var(--error-color, #db4437);
   }
 
-  .rate-bar-fill.charge {
+  .marker.cutoff {
     background: var(--success-color, #43a047);
   }
 
-  .rate-bar-fill.discharge {
-    background: var(--warning-color, #ffa000);
+  /* Power Gauge */
+  .power-gauge-wrapper .gauge {
+    width: var(--ubc-power-gauge-size);
+    height: var(--ubc-power-gauge-size);
   }
 
+  .power-gauge .gauge-center {
+    gap: 2px;
+  }
+
+  .power-gauge .power-percent {
+    font-size: 1.3em;
+    color: var(--ubc-text-color);
+  }
+
+  .power-gauge .power-value {
+    font-size: 1.8em;
+    font-weight: bold;
+    line-height: 1;
+  }
+
+  .power-gauge .power-direction {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.9em;
+    color: var(--ubc-secondary-text);
+  }
+
+  .power-gauge .power-direction ha-icon {
+    --mdc-icon-size: 20px;
+  }
+
+  /* Rate Labels under power gauge */
+  .rate-labels {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 8px;
+    padding: 0 10px;
+  }
+
+  .rate-label-item {
+    font-size: 0.7em;
+    color: var(--ubc-secondary-text);
+    text-align: center;
+  }
+
+  .rate-label-item span {
+    display: block;
+    color: var(--ubc-text-color);
+    font-weight: 500;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
+    font-size: 0.95em;
+    color: var(--ubc-text-color);
+  }
+
+  /* Error and Loading States */
   .error-container {
     padding: 16px;
     text-align: center;
@@ -506,49 +600,59 @@ const cardStyles = css`
     50% { opacity: 0.3; }
   }
 
-  /* Compact mode styles */
+  /* Compact Mode */
   ha-card.compact {
-    padding: 8px;
+    padding: 12px;
   }
 
-  ha-card.compact .header-title {
-    font-size: 0.75em;
+  ha-card.compact .header {
+    margin-bottom: 8px;
   }
 
-  ha-card.compact .header-subtitle {
+  ha-card.compact .header-left {
+    width: 100%;
+  }
+
+  ha-card.compact .title-row {
+    justify-content: center;
+  }
+
+  ha-card.compact .title {
+    font-size: 1em;
+  }
+
+  ha-card.compact .mode,
+  ha-card.compact .title-row ha-icon,
+  ha-card.compact .state-row,
+  ha-card.compact .capacity-row,
+  ha-card.compact .stats-panel {
     display: none;
   }
 
-  ha-card.compact .status-icon-section {
-    width: 40px;
+  ha-card.compact .gauges-container {
+    padding: 0;
   }
 
-  ha-card.compact .status-icon-section ha-icon {
+  ha-card.compact .power-gauge-wrapper,
+  ha-card.compact .gauge-labels,
+  ha-card.compact .footer {
+    display: none;
+  }
+
+  ha-card.compact .gauge {
+    --ubc-gauge-size: 100px;
+  }
+
+  ha-card.compact .main-gauge .gauge-center ha-icon {
     --mdc-icon-size: 28px;
   }
 
-  ha-card.compact .battery-icon-wrapper ha-icon {
-    --mdc-icon-size: 36px;
-  }
-
-  ha-card.compact .soc-percent {
+  ha-card.compact .main-gauge .soc-value {
     font-size: 1.4em;
   }
 
-  ha-card.compact .soc-energy {
+  ha-card.compact .main-gauge .energy-value {
     display: none;
-  }
-
-  ha-card.compact .time-section {
-    display: none;
-  }
-
-  ha-card.compact .rates-section {
-    display: none;
-  }
-
-  ha-card.compact .battery-layout {
-    margin-top: 4px;
   }
 `;
 
@@ -584,6 +688,7 @@ const editorStyles = css`
 const EDITOR_TABS = [
   { id: 'general', label: 'General' },
   { id: 'entities', label: 'Entities' },
+  { id: 'stats', label: 'Stats' },
   { id: 'actions', label: 'Actions' },
   { id: 'soc', label: 'SOC Colors' },
   { id: 'icons', label: 'Icons' },
@@ -616,6 +721,15 @@ const ENTITIES_SCHEMA = [
   { name: 'charge_rate', label: 'OR Fixed Max Charge Rate (W)', selector: { number: { min: 0, max: 50000, mode: 'box' } } },
   { name: 'discharge_rate_entity', label: 'Max Discharge Rate Entity', selector: { entity: { domain: ['sensor', 'number'] } } },
   { name: 'discharge_rate', label: 'OR Fixed Max Discharge Rate (W)', selector: { number: { min: 0, max: 50000, mode: 'box' } } },
+  // Cutoff (max charge limit)
+  { name: 'cutoff_entity', label: 'Cutoff Entity (max charge %)', selector: { entity: { domain: ['sensor', 'number'] } } },
+  { name: 'cutoff', label: 'OR Fixed Cutoff (%)', selector: { number: { min: 0, max: 100, mode: 'box' } } },
+];
+
+const STATS_SCHEMA = [
+  { name: 'temp_entity', label: 'Temperature Entity', selector: { entity: { domain: 'sensor' } } },
+  { name: 'cycles_entity', label: 'Battery Cycles Entity', selector: { entity: { domain: 'sensor' } } },
+  { name: 'health_entity', label: 'Battery Health Entity', selector: { entity: { domain: 'sensor' } } },
 ];
 
 const SOC_SCHEMA = [
@@ -669,6 +783,7 @@ function getSchemaForTab(tabId) {
   switch (tabId) {
     case 'general': return GENERAL_SCHEMA;
     case 'entities': return ENTITIES_SCHEMA;
+    case 'stats': return STATS_SCHEMA;
     case 'actions': return ACTIONS_SCHEMA;
     case 'soc': return SOC_SCHEMA;
     case 'icons': return ICONS_SCHEMA;
@@ -728,7 +843,12 @@ class UniversalBatteryCardEditor extends LitElement {
         <div class="tab-content">
           ${this._currentTab === 'entities' ? html`
             <div class="helper-text">
-              For static values (capacity, reserve, rates), you can either select an entity OR enter a fixed value. Fixed values take priority.
+              For static values (capacity, reserve, rates, cutoff), you can either select an entity OR enter a fixed value. Fixed values take priority.
+            </div>
+          ` : ''}
+          ${this._currentTab === 'stats' ? html`
+            <div class="helper-text">
+              Optional battery stats displayed in top-right panel. Stats panel only appears if at least one entity is configured.
             </div>
           ` : ''}
           ${this._currentTab === 'soc' ? html`
@@ -810,10 +930,9 @@ class UniversalBatteryCard extends LitElement {
   }
 
   getCardSize() {
-    if (this._config?.compact) return 2;
-    const hasRates = this._config?.charge_rate_entity || this._config?.charge_rate ||
-                     this._config?.discharge_rate_entity || this._config?.discharge_rate;
-    return hasRates ? 4 : 3;
+    if (this._config?.compact) return 3;
+    // Full design with gauges needs more vertical space
+    return 5;
   }
 
   _handleTapStart(e) {
@@ -943,6 +1062,33 @@ class UniversalBatteryCard extends LitElement {
       }
     }
 
+    // Cutoff (max charge limit %)
+    const cutoffData = getEntityOrFixedValue(this.hass, config, 'cutoff_entity', 'cutoff', '%');
+    let cutoffPercent = null;
+    if (cutoffData.available && cutoffData.value !== null) {
+      cutoffPercent = cutoffData.value;
+    }
+
+    // Power percentage (relative to max rate)
+    let powerPercent = 0;
+    if (status === 'charging' && chargeRateW && chargeRateW > 0) {
+      powerPercent = Math.min(100, (Math.abs(power) / chargeRateW) * 100);
+    } else if (status === 'discharging' && dischargeRateW && dischargeRateW > 0) {
+      powerPercent = Math.min(100, (Math.abs(power) / dischargeRateW) * 100);
+    }
+
+    // Stats panel entities
+    const tempValue = getEntityValue(this.hass, config.temp_entity);
+    const cyclesValue = getEntityValue(this.hass, config.cycles_entity);
+    const healthValue = getEntityValue(this.hass, config.health_entity);
+
+    const temp = tempValue.available ? tempValue.value : null;
+    const tempUnit = tempValue.unit || '°C';
+    const cycles = cyclesValue.available ? cyclesValue.value : null;
+    const health = healthValue.available ? healthValue.value : null;
+
+    const hasStats = temp !== null || cycles !== null || health !== null;
+
     return {
       socPercent: socValue.value,
       socEnergyWh,
@@ -957,8 +1103,38 @@ class UniversalBatteryCard extends LitElement {
       chargeRatePercent,
       dischargeRateW,
       dischargeRatePercent,
+      cutoffPercent,
+      powerPercent,
+      temp,
+      tempUnit,
+      cycles,
+      health,
+      hasStats,
       decimals,
     };
+  }
+
+  /**
+   * Generates conic-gradient background for gauge
+   * @param {number} value - Percentage (0-100)
+   * @param {string} color - CSS color for filled portion
+   * @returns {string} CSS background value
+   */
+  _getGaugeBackground(value, color) {
+    // 270 degree arc starting at 135deg (bottom-left to bottom-right through top)
+    const degrees = Math.min(100, Math.max(0, value)) * 2.7;
+    return `conic-gradient(from 135deg, ${color} ${degrees}deg, var(--ubc-gauge-bg) ${degrees}deg 270deg, transparent 270deg)`;
+  }
+
+  /**
+   * Calculates marker rotation for gauge position
+   * @param {number} percent - Position as percentage (0-100)
+   * @returns {string} CSS transform value
+   */
+  _getMarkerRotation(percent) {
+    // Start at 135deg, map 0-100% to 0-270deg
+    const rotation = 135 + (percent * 2.7);
+    return `rotate(${rotation}deg)`;
   }
 
   render() {
@@ -981,14 +1157,13 @@ class UniversalBatteryCard extends LitElement {
     if (!stats) return this._renderError('Unable to read sensor values');
 
     const socColor = getSocColor(stats.socPercent, this._config);
-    const statusIcon = getStatusIcon(stats.status, this._config);
     const batteryIcon = getBatteryIcon(stats.socPercent);
 
     // Get state text - from entity or auto-detect
     let statusText = stats.status.charAt(0).toUpperCase() + stats.status.slice(1);
+    let stateEntityText = null;
     if (this._config.state_entity && this.hass.states[this._config.state_entity]) {
-      const stateVal = this.hass.states[this._config.state_entity].state;
-      statusText = stateVal.charAt(0).toUpperCase() + stateVal.slice(1).toLowerCase();
+      stateEntityText = this.hass.states[this._config.state_entity].state;
     }
 
     // Get mode text from entity
@@ -1000,26 +1175,35 @@ class UniversalBatteryCard extends LitElement {
     // Format values
     const socEnergyFormatted = stats.socEnergyWh !== null ? formatEnergy(stats.socEnergyWh, stats.decimals) : null;
     const capacityFormatted = stats.capacityWh !== null ? formatEnergy(stats.capacityWh, stats.decimals) : null;
-    const reserveFormatted = stats.reserveWh !== null ? formatEnergy(stats.reserveWh, 0) : null;
-    const powerFormatted = formatPower(stats.power);
+    const powerFormatted = formatPower(Math.abs(stats.power));
+    const chargeRateFormatted = stats.chargeRateW !== null ? formatPower(stats.chargeRateW) : null;
+    const dischargeRateFormatted = stats.dischargeRateW !== null ? formatPower(stats.dischargeRateW) : null;
 
-    // Power direction icon
-    let powerIcon = '';
-    if (stats.status === 'charging') powerIcon = 'mdi:arrow-left';
-    else if (stats.status === 'discharging') powerIcon = 'mdi:arrow-right';
+    // Power direction
+    const powerDirection = stats.status === 'charging' ? 'Charge' : stats.status === 'discharging' ? 'Discharge' : 'Idle';
+    const powerIcon = stats.status === 'charging' ? 'mdi:arrow-left' : stats.status === 'discharging' ? 'mdi:arrow-right' : '';
 
-    // Build subtitle
-    let subtitle = '';
-    if (capacityFormatted) {
-      subtitle += `Capacity: ${capacityFormatted.value} ${capacityFormatted.unit}`;
-    }
-    if (reserveFormatted && stats.reservePercent !== null) {
-      if (subtitle) subtitle += ' | ';
-      subtitle += `Reserve: ${reserveFormatted.value} ${reserveFormatted.unit} (${Math.round(stats.reservePercent)}%)`;
-    }
-    if (modeText) {
-      if (subtitle) subtitle += ' | ';
-      subtitle += `Mode: ${modeText}`;
+    // Status icon for display
+    const statusIcon = stats.status === 'charging' ? 'mdi:power-plug' :
+                       stats.status === 'discharging' ? 'mdi:power-plug-off' : 'mdi:power-plug';
+
+    // Gauge backgrounds
+    const socGaugeBackground = this._getGaugeBackground(stats.socPercent, socColor);
+    const powerGaugeBackground = this._getGaugeBackground(stats.powerPercent, socColor);
+
+    // Has rates configured for power gauge
+    const hasRates = stats.chargeRateW !== null || stats.dischargeRateW !== null;
+
+    // Footer text
+    let footerText = '';
+    if (stats.status !== 'idle' && stats.timeToTarget !== null) {
+      const durationFormatted = formatDuration(stats.timeToTarget);
+      const etaFormatted = formatTimeOfArrival(stats.timeToTarget);
+      if (stats.status === 'discharging') {
+        footerText = `Runtime: ${durationFormatted} | Depletes At: ${etaFormatted}`;
+      } else {
+        footerText = `Time to Full: ${durationFormatted} | Full At: ${etaFormatted}`;
+      }
     }
 
     return html`
@@ -1029,110 +1213,104 @@ class UniversalBatteryCard extends LitElement {
         @mouseup=${this._handleTapEnd}
         @mouseleave=${this._handleTapCancel}
       >
-        <div class="card-header">
-          <div class="header-title">${this._config.name} | ${statusText}</div>
-          ${subtitle ? html`<div class="header-subtitle">${subtitle}</div>` : ''}
-        </div>
-
-        <div class="battery-layout">
-          <!-- Left: Status Icon -->
-          <div class="status-icon-section">
-            <ha-icon icon="${statusIcon}"></ha-icon>
-          </div>
-
-          <!-- Center: Battery -->
-          <div class="battery-center">
-            <div class="battery-visual">
-              <div class="battery-icon-wrapper" style="color: ${socColor}">
-                <ha-icon icon="${batteryIcon}"></ha-icon>
-              </div>
-              <span class="soc-percent" style="color: ${socColor}">${stats.socPercent.toFixed(stats.decimals)}%</span>
+        <!-- Header -->
+        <div class="header">
+          <div class="header-left">
+            <div class="title-row">
+              <span class="title">${this._config.name}</span>
+              ${modeText ? html`<span class="mode">| ${modeText}</span>` : ''}
+              <ha-icon icon="mdi:cog"></ha-icon>
             </div>
-            ${socEnergyFormatted ? html`
-              <div class="soc-energy">${socEnergyFormatted.value} ${socEnergyFormatted.unit}</div>
+            <div class="state-row">
+              Mode: ${statusText}${stateEntityText ? html` (${stateEntityText})` : ''}
+              <ha-icon icon="${statusIcon}"></ha-icon>
+            </div>
+            ${capacityFormatted ? html`
+              <div class="capacity-row">Capacity: ${capacityFormatted.value} ${capacityFormatted.unit}</div>
             ` : ''}
-            <div class="power-display">
-              ${powerIcon ? html`<ha-icon icon="${powerIcon}"></ha-icon>` : ''}
-              <span>${stats.status === 'idle' ? '0 W' : `${powerFormatted.value} ${powerFormatted.unit}`}</span>
+          </div>
+          ${stats.hasStats ? html`
+            <div class="stats-panel">
+              ${stats.temp !== null ? html`
+                <div class="stat">Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
+              ` : ''}
+              ${stats.cycles !== null ? html`
+                <div class="stat">Battery Cycles: <span>${stats.cycles}</span></div>
+              ` : ''}
+              ${stats.health !== null ? html`
+                <div class="stat">Battery Health: <span>${stats.health}%</span></div>
+              ` : ''}
             </div>
-          </div>
-
-          <!-- Right: Time Estimates -->
-          <div class="time-section">
-            ${stats.status !== 'idle' && stats.targetPercent !== null ? html`
-              <div class="time-item">
-                <div class="time-value ${stats.timeToTarget === null ? 'disabled' : ''}">
-                  <ha-icon icon="mdi:timer-sand"></ha-icon>
-                  ${stats.timeToTarget !== null ? formatDuration(stats.timeToTarget) : '--:--:--'}
-                </div>
-                <div class="time-label">until ${stats.targetPercent}%</div>
-              </div>
-              <div class="time-item">
-                <div class="time-value ${stats.timeToTarget === null ? 'disabled' : ''}">
-                  <ha-icon icon="mdi:clock-outline"></ha-icon>
-                  ${stats.timeToTarget !== null ? formatTimeOfArrival(stats.timeToTarget) : '--/-- --:--'}
-                </div>
-                <div class="time-label">at ${stats.targetPercent}%</div>
-              </div>
-            ` : html`
-              <div class="time-item">
-                <div class="time-value disabled">
-                  <ha-icon icon="mdi:timer-sand"></ha-icon>
-                  --:--:--
-                </div>
-                <div class="time-label">No load</div>
-              </div>
-              <div class="time-item">
-                <div class="time-value disabled">
-                  <ha-icon icon="mdi:clock-outline"></ha-icon>
-                  --/-- --:--
-                </div>
-                <div class="time-label">No load</div>
-              </div>
-            `}
-          </div>
+          ` : ''}
         </div>
-        ${this._renderRates(stats)}
+
+        <!-- Gauges -->
+        <div class="gauges-container">
+          <!-- Main SOC Gauge -->
+          <div class="gauge-wrapper main-gauge-wrapper">
+            <div class="gauge main-gauge" style="background: ${socGaugeBackground}">
+              <!-- Markers -->
+              ${stats.reservePercent !== null ? html`
+                <div class="marker reserve" style="transform-origin: center 90px; transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
+              ` : ''}
+              ${stats.cutoffPercent !== null ? html`
+                <div class="marker cutoff" style="transform-origin: center 90px; transform: ${this._getMarkerRotation(stats.cutoffPercent)}"></div>
+              ` : ''}
+              <div class="gauge-center">
+                <ha-icon icon="${batteryIcon}" style="color: ${socColor}"></ha-icon>
+                <span class="soc-value" style="color: ${socColor}">${Math.round(stats.socPercent)}%</span>
+                ${socEnergyFormatted ? html`
+                  <span class="energy-value">${socEnergyFormatted.value} ${socEnergyFormatted.unit}</span>
+                ` : ''}
+              </div>
+            </div>
+            <!-- Labels outside gauge -->
+            <div class="gauge-labels">
+              ${stats.reservePercent !== null ? html`
+                <div class="gauge-label reserve">Reserve ${Math.round(stats.reservePercent)}%</div>
+              ` : ''}
+              ${stats.cutoffPercent !== null ? html`
+                <div class="gauge-label cutoff">Cutoff ${Math.round(stats.cutoffPercent)}%</div>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Power Gauge (only if rates configured) -->
+          ${hasRates ? html`
+            <div class="gauge-wrapper power-gauge-wrapper">
+              <div class="gauge power-gauge" style="background: ${powerGaugeBackground}">
+                <div class="gauge-center">
+                  <span class="power-percent">${Math.round(stats.powerPercent)}%</span>
+                  <span class="power-value" style="color: ${socColor}">${powerFormatted.value} ${powerFormatted.unit}</span>
+                  <span class="power-direction">
+                    ${powerDirection}
+                    ${powerIcon ? html`<ha-icon icon="${powerIcon}" style="color: ${socColor}"></ha-icon>` : ''}
+                  </span>
+                </div>
+              </div>
+              <div class="rate-labels">
+                ${dischargeRateFormatted ? html`
+                  <div class="rate-label-item">
+                    Max Discharge
+                    <span>${dischargeRateFormatted.value} ${dischargeRateFormatted.unit}</span>
+                  </div>
+                ` : ''}
+                ${chargeRateFormatted ? html`
+                  <div class="rate-label-item">
+                    Max Charge
+                    <span>${chargeRateFormatted.value} ${chargeRateFormatted.unit}</span>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Footer -->
+        ${footerText ? html`
+          <div class="footer">${footerText}</div>
+        ` : ''}
       </ha-card>
-    `;
-  }
-
-  _renderRates(stats) {
-    // Only show if at least one rate is configured
-    if (stats.chargeRateW === null && stats.dischargeRateW === null) {
-      return '';
-    }
-
-    const chargeRateFormatted = stats.chargeRateW !== null ? formatPower(stats.chargeRateW) : null;
-    const dischargeRateFormatted = stats.dischargeRateW !== null ? formatPower(stats.dischargeRateW) : null;
-
-    return html`
-      <div class="rates-section">
-        ${chargeRateFormatted ? html`
-          <div class="rate-item">
-            <div class="rate-header">
-              <span class="rate-label">Charge Rate</span>
-              <span class="rate-value">${Math.round(stats.chargeRatePercent ?? 0)}%</span>
-            </div>
-            <div class="rate-bar">
-              <div class="rate-bar-fill charge" style="width: ${stats.chargeRatePercent ?? 0}%"></div>
-            </div>
-            <div class="rate-value">${chargeRateFormatted.value} ${chargeRateFormatted.unit} max</div>
-          </div>
-        ` : ''}
-        ${dischargeRateFormatted ? html`
-          <div class="rate-item">
-            <div class="rate-header">
-              <span class="rate-label">Discharge Rate</span>
-              <span class="rate-value">${Math.round(stats.dischargeRatePercent ?? 0)}%</span>
-            </div>
-            <div class="rate-bar">
-              <div class="rate-bar-fill discharge" style="width: ${stats.dischargeRatePercent ?? 0}%"></div>
-            </div>
-            <div class="rate-value">${dischargeRateFormatted.value} ${dischargeRateFormatted.unit} max</div>
-          </div>
-        ` : ''}
-      </div>
     `;
   }
 
@@ -1149,26 +1327,22 @@ class UniversalBatteryCard extends LitElement {
 
   _renderLoading() {
     return html`
-      <ha-card>
-        <div class="card-header">
-          <div class="header-title">${this._config.name} | Loading...</div>
-        </div>
-        <div class="battery-layout">
-          <div class="status-icon-section">
-            <ha-icon icon="mdi:battery-unknown" class="skeleton"></ha-icon>
-          </div>
-          <div class="battery-center">
-            <div class="battery-visual">
-              <div class="battery-icon-wrapper skeleton">
-                <ha-icon icon="mdi:battery-50"></ha-icon>
-              </div>
-              <span class="soc-percent skeleton">--%</span>
+      <ha-card class="${this._config.compact ? 'compact' : ''}">
+        <div class="header">
+          <div class="header-left">
+            <div class="title-row">
+              <span class="title">${this._config.name}</span>
             </div>
-            <div class="power-display skeleton">-- W</div>
+            <div class="state-row skeleton">Loading...</div>
           </div>
-          <div class="time-section">
-            <div class="time-item">
-              <div class="time-value disabled">--:--:--</div>
+        </div>
+        <div class="gauges-container">
+          <div class="gauge-wrapper main-gauge-wrapper">
+            <div class="gauge main-gauge skeleton" style="background: var(--ubc-gauge-bg)">
+              <div class="gauge-center">
+                <ha-icon icon="mdi:battery-50" class="skeleton"></ha-icon>
+                <span class="soc-value skeleton">--%</span>
+              </div>
             </div>
           </div>
         </div>
