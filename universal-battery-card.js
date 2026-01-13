@@ -35,6 +35,7 @@ const DEFAULT_CONFIG = {
   health_entity: null,
   cutoff_entity: null,
   cutoff: null,
+  gauge_thickness: 15, // Ring thickness as % of gauge (5-15, default 15)
 };
 
 // ============================================================================
@@ -429,10 +430,19 @@ const cardStyles = css`
   .gauge::before {
     content: '';
     position: absolute;
-    inset: 12%;
+    inset: var(--ring-thickness, 15%);
     border-radius: 50%;
     background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
     z-index: 1;
+  }
+
+  .gauge-cap {
+    position: absolute;
+    width: var(--ring-thickness, 15%);
+    height: var(--ring-thickness, 15%);
+    border-radius: 50%;
+    z-index: 2;
+    transform: translate(-50%, -50%);
   }
 
   .gauge-center {
@@ -483,15 +493,15 @@ const cardStyles = css`
   }
 
   .gauge-label.reserve {
-    top: 50%;
-    left: -10px;
-    transform: translateX(-100%) translateY(-50%);
+    top: -5px;
+    left: 10%;
+    transform: translateY(-100%);
   }
 
   .gauge-label.cutoff {
-    top: 15%;
-    right: -10px;
-    transform: translateX(100%);
+    top: -5px;
+    right: 10%;
+    transform: translateY(-100%);
   }
 
   /* Gauge Markers */
@@ -575,7 +585,7 @@ const cardStyles = css`
     padding-top: 12px;
     border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
     font-size: 0.95em;
-    color: var(--ubc-text-color);
+    color: var(--ubc-secondary-text);
   }
 
   /* Error and Loading States */
@@ -699,6 +709,7 @@ const GENERAL_SCHEMA = [
   { name: 'name', label: 'Card Name', selector: { text: {} } },
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
   { name: 'compact', label: 'Compact Mode', selector: { boolean: {} } },
+  { name: 'gauge_thickness', label: 'Gauge Ring Thickness (%)', selector: { number: { min: 5, max: 15, mode: 'slider' } } },
 ];
 
 const ENTITIES_SCHEMA = [
@@ -1121,9 +1132,29 @@ class UniversalBatteryCard extends LitElement {
    * @returns {string} CSS background value
    */
   _getGaugeBackground(value, color) {
-    // 270 degree arc starting at 135deg (bottom-left to bottom-right through top)
-    const degrees = Math.min(100, Math.max(0, value)) * 2.7;
-    return `conic-gradient(from 135deg, ${color} ${degrees}deg, var(--ubc-gauge-bg) ${degrees}deg 270deg, transparent 270deg)`;
+    // Full 360 degree circle, color starts at top and fills counter-clockwise
+    const degrees = Math.min(100, Math.max(0, value)) * 3.6;
+    const startAngle = 360 - degrees;
+    return `conic-gradient(from 0deg, var(--ubc-gauge-bg) 0deg ${startAngle}deg, ${color} ${startAngle}deg 360deg)`;
+  }
+
+  /**
+   * Generates conic-gradient background for power gauge with direction support
+   * @param {number} value - Percentage (0-100)
+   * @param {string} color - CSS color for filled portion
+   * @param {boolean} isCharging - If true, fills clockwise; if false, fills counter-clockwise
+   * @returns {string} CSS background value
+   */
+  _getPowerGaugeBackground(value, color, isCharging) {
+    const degrees = Math.min(100, Math.max(0, value)) * 3.6;
+    if (isCharging) {
+      // Clockwise from top: color from 0 to degrees
+      return `conic-gradient(from 0deg, ${color} 0deg ${degrees}deg, var(--ubc-gauge-bg) ${degrees}deg 360deg)`;
+    } else {
+      // Counter-clockwise from top: color from (360-degrees) to 360
+      const startAngle = 360 - degrees;
+      return `conic-gradient(from 0deg, var(--ubc-gauge-bg) 0deg ${startAngle}deg, ${color} ${startAngle}deg 360deg)`;
+    }
   }
 
   /**
@@ -1132,9 +1163,44 @@ class UniversalBatteryCard extends LitElement {
    * @returns {string} CSS transform value
    */
   _getMarkerRotation(percent) {
-    // Start at 135deg, map 0-100% to 0-270deg
-    const rotation = 135 + (percent * 2.7);
+    // Full circle starting at top (0deg), going counter-clockwise
+    // So 0% = 0deg (top), 50% = 180deg (bottom going left), 100% = 360deg
+    const rotation = 360 - (percent * 3.6);
     return `rotate(${rotation}deg)`;
+  }
+
+  /**
+   * Gets the position for a rounded end cap on the gauge
+   * @param {number} percent - Position as percentage (0-100)
+   * @param {number} thickness - Ring thickness as percentage (default 15)
+   * @returns {{x: number, y: number, startY: number}} Position as percentage from top-left
+   */
+  _getCapPosition(percent, thickness = 15) {
+    // Counter-clockwise from top: angle = -(percent * 3.6) degrees
+    // Ring midpoint = 50% - (thickness/2)
+    const ringRadius = 50 - (thickness / 2);
+    const angleRad = -(percent * 3.6) * (Math.PI / 180);
+    const x = 50 + ringRadius * Math.sin(angleRad);
+    const y = 50 - ringRadius * Math.cos(angleRad);
+    const startY = 50 - ringRadius; // Top position for start cap
+    return { x, y, startY };
+  }
+
+  /**
+   * Gets the position for a rounded end cap on the power gauge with direction support
+   * @param {number} percent - Position as percentage (0-100)
+   * @param {number} thickness - Ring thickness as percentage
+   * @param {boolean} isCharging - If true, calculates for clockwise fill; if false, counter-clockwise
+   * @returns {{x: number, y: number, startY: number}} Position as percentage from top-left
+   */
+  _getPowerCapPosition(percent, thickness, isCharging) {
+    const ringRadius = 50 - (thickness / 2);
+    const direction = isCharging ? 1 : -1; // Clockwise = +, Counter-clockwise = -
+    const angleRad = direction * (percent * 3.6) * (Math.PI / 180);
+    const x = 50 + ringRadius * Math.sin(angleRad);
+    const y = 50 - ringRadius * Math.cos(angleRad);
+    const startY = 50 - ringRadius;
+    return { x, y, startY };
   }
 
   render() {
@@ -1189,7 +1255,16 @@ class UniversalBatteryCard extends LitElement {
 
     // Gauge backgrounds
     const socGaugeBackground = this._getGaugeBackground(stats.socPercent, socColor);
-    const powerGaugeBackground = this._getGaugeBackground(stats.powerPercent, socColor);
+
+    // Power gauge: direction and color based on charging/discharging
+    const isCharging = stats.status === 'charging';
+    const powerGaugeColor = isCharging ? 'rgb(0, 128, 0)' : 'rgb(255, 166, 0)';
+    const powerGaugeBackground = this._getPowerGaugeBackground(stats.powerPercent, powerGaugeColor, isCharging);
+
+    // Gauge thickness
+    const thickness = this._config.gauge_thickness ?? 15;
+    const socCapPos = this._getCapPosition(stats.socPercent, thickness);
+    const powerCapPos = this._getPowerCapPosition(stats.powerPercent, thickness, isCharging);
 
     // Has rates configured for power gauge
     const hasRates = stats.chargeRateW !== null || stats.dischargeRateW !== null;
@@ -1200,9 +1275,9 @@ class UniversalBatteryCard extends LitElement {
       const durationFormatted = formatDuration(stats.timeToTarget);
       const etaFormatted = formatTimeOfArrival(stats.timeToTarget);
       if (stats.status === 'discharging') {
-        footerText = `Runtime: ${durationFormatted} | Depletes At: ${etaFormatted}`;
+        footerText = `Runtime: ${durationFormatted}  |  Depletes At: ${etaFormatted}`;
       } else {
-        footerText = `Time to Full: ${durationFormatted} | Full At: ${etaFormatted}`;
+        footerText = `Time to Full: ${durationFormatted}  |  Full At: ${etaFormatted}`;
       }
     }
 
@@ -1222,7 +1297,7 @@ class UniversalBatteryCard extends LitElement {
               <ha-icon icon="mdi:cog"></ha-icon>
             </div>
             <div class="state-row">
-              Mode: ${statusText}${stateEntityText ? html` (${stateEntityText})` : ''}
+              Mode: ${stateEntityText ? stateEntityText : statusText}
               <ha-icon icon="${statusIcon}"></ha-icon>
             </div>
             ${capacityFormatted ? html`
@@ -1248,13 +1323,18 @@ class UniversalBatteryCard extends LitElement {
         <div class="gauges-container">
           <!-- Main SOC Gauge -->
           <div class="gauge-wrapper main-gauge-wrapper">
-            <div class="gauge main-gauge" style="background: ${socGaugeBackground}">
+            <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
+              <!-- Rounded end caps -->
+              ${stats.socPercent > 0 ? html`
+                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
+                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
+              ` : ''}
               <!-- Markers -->
               ${stats.reservePercent !== null ? html`
-                <div class="marker reserve" style="transform-origin: center 90px; transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
+                <div class="marker reserve" style="transform-origin: center calc(var(--ubc-gauge-size) / 2); transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
               ` : ''}
               ${stats.cutoffPercent !== null ? html`
-                <div class="marker cutoff" style="transform-origin: center 90px; transform: ${this._getMarkerRotation(stats.cutoffPercent)}"></div>
+                <div class="marker cutoff" style="transform-origin: center calc(var(--ubc-gauge-size) / 2); transform: ${this._getMarkerRotation(stats.cutoffPercent)}"></div>
               ` : ''}
               <div class="gauge-center">
                 <ha-icon icon="${batteryIcon}" style="color: ${socColor}"></ha-icon>
@@ -1278,13 +1358,18 @@ class UniversalBatteryCard extends LitElement {
           <!-- Power Gauge (only if rates configured) -->
           ${hasRates ? html`
             <div class="gauge-wrapper power-gauge-wrapper">
-              <div class="gauge power-gauge" style="background: ${powerGaugeBackground}">
+              <div class="gauge power-gauge" style="background: ${powerGaugeBackground}; --ring-thickness: ${thickness}%">
+                <!-- Rounded end caps -->
+                ${stats.powerPercent > 0 ? html`
+                  <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.startY}%; left: 50%;"></div>
+                  <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.y}%; left: ${powerCapPos.x}%;"></div>
+                ` : ''}
                 <div class="gauge-center">
                   <span class="power-percent">${Math.round(stats.powerPercent)}%</span>
-                  <span class="power-value" style="color: ${socColor}">${powerFormatted.value} ${powerFormatted.unit}</span>
+                  <span class="power-value" style="color: ${powerGaugeColor}">${powerFormatted.value} ${powerFormatted.unit}</span>
                   <span class="power-direction">
                     ${powerDirection}
-                    ${powerIcon ? html`<ha-icon icon="${powerIcon}" style="color: ${socColor}"></ha-icon>` : ''}
+                    ${powerIcon ? html`<ha-icon icon="${powerIcon}" style="color: ${powerGaugeColor}"></ha-icon>` : ''}
                   </span>
                 </div>
               </div>
