@@ -36,6 +36,9 @@ const DEFAULT_CONFIG = {
   cutoff_entity: null,
   cutoff: null,
   gauge_thickness: 15, // Ring thickness as % of gauge (5-15, default 15)
+  show_runtime: true,
+  show_rates: true,
+  header_style: 'full', // 'none', 'title', 'full'
 };
 
 // ============================================================================
@@ -403,9 +406,9 @@ const cardStyles = css`
   /* Gauges Container */
   .gauges-container {
     display: flex;
-    justify-content: space-around;
+    justify-content: center;
     align-items: center;
-    gap: 20px;
+    gap: 40px;
     padding: 10px 0;
   }
 
@@ -508,9 +511,9 @@ const cardStyles = css`
   .marker {
     position: absolute;
     width: 4px;
-    height: 14px;
+    height: calc(var(--ring-thickness, 15%) + 12px);
     border-radius: 2px;
-    top: 0;
+    top: -6px;
     left: 50%;
     margin-left: -2px;
     z-index: 3;
@@ -710,6 +713,13 @@ const GENERAL_SCHEMA = [
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
   { name: 'compact', label: 'Compact Mode', selector: { boolean: {} } },
   { name: 'gauge_thickness', label: 'Gauge Ring Thickness (%)', selector: { number: { min: 5, max: 15, mode: 'slider' } } },
+  { name: 'header_style', label: 'Header Style', selector: { select: { options: [
+    { value: 'full', label: 'Full Header' },
+    { value: 'title', label: 'Title Only' },
+    { value: 'none', label: 'No Title' },
+  ] } } },
+  { name: 'show_runtime', label: 'Display Runtime/Depletion Times', selector: { boolean: {} } },
+  { name: 'show_rates', label: 'Display Charge/Discharge Rates', selector: { boolean: {} } },
 ];
 
 const ENTITIES_SCHEMA = [
@@ -1289,35 +1299,39 @@ class UniversalBatteryCard extends LitElement {
         @mouseleave=${this._handleTapCancel}
       >
         <!-- Header -->
-        <div class="header">
-          <div class="header-left">
-            <div class="title-row">
-              <span class="title">${this._config.name}</span>
-              ${modeText ? html`<span class="mode">| ${modeText}</span>` : ''}
-              <ha-icon icon="mdi:cog"></ha-icon>
+        ${this._config.header_style !== 'none' ? html`
+          <div class="header">
+            <div class="header-left">
+              <div class="title-row">
+                <span class="title">${this._config.name}</span>
+                ${this._config.header_style === 'full' && modeText ? html`<span class="mode">| ${modeText}</span>` : ''}
+                ${this._config.header_style === 'full' ? html`<ha-icon icon="mdi:cog"></ha-icon>` : ''}
+              </div>
+              ${this._config.header_style === 'full' ? html`
+                <div class="state-row">
+                  Mode: ${stateEntityText ? stateEntityText : statusText}
+                  <ha-icon icon="${statusIcon}"></ha-icon>
+                </div>
+                ${capacityFormatted ? html`
+                  <div class="capacity-row">Capacity: ${capacityFormatted.value} ${capacityFormatted.unit}</div>
+                ` : ''}
+              ` : ''}
             </div>
-            <div class="state-row">
-              Mode: ${stateEntityText ? stateEntityText : statusText}
-              <ha-icon icon="${statusIcon}"></ha-icon>
-            </div>
-            ${capacityFormatted ? html`
-              <div class="capacity-row">Capacity: ${capacityFormatted.value} ${capacityFormatted.unit}</div>
+            ${this._config.header_style === 'full' && stats.hasStats ? html`
+              <div class="stats-panel">
+                ${stats.temp !== null ? html`
+                  <div class="stat">Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
+                ` : ''}
+                ${stats.cycles !== null ? html`
+                  <div class="stat">Battery Cycles: <span>${stats.cycles}</span></div>
+                ` : ''}
+                ${stats.health !== null ? html`
+                  <div class="stat">Battery Health: <span>${stats.health}%</span></div>
+                ` : ''}
+              </div>
             ` : ''}
           </div>
-          ${stats.hasStats ? html`
-            <div class="stats-panel">
-              ${stats.temp !== null ? html`
-                <div class="stat">Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
-              ` : ''}
-              ${stats.cycles !== null ? html`
-                <div class="stat">Battery Cycles: <span>${stats.cycles}</span></div>
-              ` : ''}
-              ${stats.health !== null ? html`
-                <div class="stat">Battery Health: <span>${stats.health}%</span></div>
-              ` : ''}
-            </div>
-          ` : ''}
-        </div>
+        ` : ''}
 
         <!-- Gauges -->
         <div class="gauges-container">
@@ -1331,10 +1345,10 @@ class UniversalBatteryCard extends LitElement {
               ` : ''}
               <!-- Markers -->
               ${stats.reservePercent !== null ? html`
-                <div class="marker reserve" style="transform-origin: center calc(var(--ubc-gauge-size) / 2); transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
+                <div class="marker reserve" style="transform-origin: center calc(var(--ubc-gauge-size) / 2 + 6px); transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
               ` : ''}
               ${stats.cutoffPercent !== null ? html`
-                <div class="marker cutoff" style="transform-origin: center calc(var(--ubc-gauge-size) / 2); transform: ${this._getMarkerRotation(stats.cutoffPercent)}"></div>
+                <div class="marker cutoff" style="transform-origin: center calc(var(--ubc-gauge-size) / 2 + 6px); transform: ${this._getMarkerRotation(stats.cutoffPercent)}"></div>
               ` : ''}
               <div class="gauge-center">
                 <ha-icon icon="${batteryIcon}" style="color: ${socColor}"></ha-icon>
@@ -1355,8 +1369,8 @@ class UniversalBatteryCard extends LitElement {
             </div>
           </div>
 
-          <!-- Power Gauge (only if rates configured) -->
-          ${hasRates ? html`
+          <!-- Power Gauge (only if rates configured and enabled) -->
+          ${hasRates && this._config.show_rates !== false ? html`
             <div class="gauge-wrapper power-gauge-wrapper">
               <div class="gauge power-gauge" style="background: ${powerGaugeBackground}; --ring-thickness: ${thickness}%">
                 <!-- Rounded end caps -->
@@ -1392,7 +1406,7 @@ class UniversalBatteryCard extends LitElement {
         </div>
 
         <!-- Footer -->
-        ${footerText ? html`
+        ${footerText && this._config.show_runtime !== false ? html`
           <div class="footer">${footerText}</div>
         ` : ''}
       </ha-card>
