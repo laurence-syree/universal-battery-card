@@ -24,11 +24,11 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 
 ### HACS (Recommended)
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+
 1. Open HACS in your Home Assistant instance
-2. Click the three dots in the top right corner
-3. Select "Custom repositories"
-4. Add this repository URL with category "Dashboard"
-5. Search for "Universal Battery Card" and install
+2. Search for "Universal Battery Card"
+3. Click Install
 
 ### Manual Installation
 
