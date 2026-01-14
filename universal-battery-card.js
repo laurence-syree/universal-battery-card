@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -28,7 +28,6 @@ const DEFAULT_CONFIG = {
   icon_idle: 'mdi:sleep',
   enable_trickle_charge_filter: false,
   trickle_charge_threshold: 25,
-  compact: false,
   // New v2.0 options
   temp_entity: null,
   cycles_entity: null,
@@ -308,6 +307,8 @@ function handleAction(node, hass, config, action) {
 
 const cardStyles = css`
   :host {
+    display: block;
+    height: 100%;
     --ubc-text-color: var(--primary-text-color);
     --ubc-secondary-text: var(--secondary-text-color);
     --ubc-gauge-bg: var(--divider-color, #3a3a3a);
@@ -316,6 +317,10 @@ const cardStyles = css`
   }
 
   ha-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
     padding: 16px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -342,6 +347,8 @@ const cardStyles = css`
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
+    flex: 1;
   }
 
   .title-row {
@@ -354,6 +361,9 @@ const cardStyles = css`
     font-size: 1.4em;
     font-weight: bold;
     color: var(--ubc-text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mode {
@@ -387,10 +397,11 @@ const cardStyles = css`
 
   /* Stats Panel */
   .stats-panel {
-    display: flex;
+    display: var(--ubc-stats-display, flex);
     flex-direction: column;
     align-items: flex-end;
     gap: 2px;
+    flex-shrink: 0;
   }
 
   .stat {
@@ -405,11 +416,13 @@ const cardStyles = css`
 
   /* Gauges Container */
   .gauges-container {
+    flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 40px;
+    gap: var(--ubc-gauge-gap, 40px);
     padding: 10px 0;
+    min-height: 0; /* Allow shrinking */
   }
 
   /* Gauge Base Styles */
@@ -460,11 +473,11 @@ const cardStyles = css`
 
   /* Main SOC Gauge */
   .main-gauge .gauge-center ha-icon {
-    --mdc-icon-size: 48px;
+    --mdc-icon-size: calc(var(--ubc-gauge-size) * 0.27);
   }
 
   .main-gauge .soc-value {
-    font-size: 2.5em;
+    font-size: calc(var(--ubc-gauge-size) * 0.14);
     font-weight: bold;
     line-height: 1;
     display: flex;
@@ -473,7 +486,7 @@ const cardStyles = css`
   }
 
   .main-gauge .energy-value {
-    font-size: 1.1em;
+    font-size: calc(var(--ubc-gauge-size) * 0.06);
     color: var(--ubc-text-color);
     margin-top: 4px;
   }
@@ -493,6 +506,7 @@ const cardStyles = css`
     font-size: 0.75em;
     color: var(--ubc-secondary-text);
     white-space: nowrap;
+    display: var(--ubc-label-display, block);
   }
 
   .gauge-label.reserve {
@@ -538,12 +552,12 @@ const cardStyles = css`
   }
 
   .power-gauge .power-percent {
-    font-size: 1.3em;
+    font-size: calc(var(--ubc-power-gauge-size) * 0.09);
     color: var(--ubc-text-color);
   }
 
   .power-gauge .power-value {
-    font-size: 1.8em;
+    font-size: calc(var(--ubc-power-gauge-size) * 0.13);
     font-weight: bold;
     line-height: 1;
   }
@@ -552,12 +566,12 @@ const cardStyles = css`
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 0.9em;
+    font-size: calc(var(--ubc-power-gauge-size) * 0.065);
     color: var(--ubc-secondary-text);
   }
 
   .power-gauge .power-direction ha-icon {
-    --mdc-icon-size: 20px;
+    --mdc-icon-size: calc(var(--ubc-power-gauge-size) * 0.14);
   }
 
   /* Rate Labels under power gauge */
@@ -612,61 +626,6 @@ const cardStyles = css`
     0%, 100% { opacity: 0.5; }
     50% { opacity: 0.3; }
   }
-
-  /* Compact Mode */
-  ha-card.compact {
-    padding: 12px;
-  }
-
-  ha-card.compact .header {
-    margin-bottom: 8px;
-  }
-
-  ha-card.compact .header-left {
-    width: 100%;
-  }
-
-  ha-card.compact .title-row {
-    justify-content: center;
-  }
-
-  ha-card.compact .title {
-    font-size: 1em;
-  }
-
-  ha-card.compact .mode,
-  ha-card.compact .title-row ha-icon,
-  ha-card.compact .state-row,
-  ha-card.compact .capacity-row,
-  ha-card.compact .stats-panel {
-    display: none;
-  }
-
-  ha-card.compact .gauges-container {
-    padding: 0;
-  }
-
-  ha-card.compact .power-gauge-wrapper,
-  ha-card.compact .gauge-labels,
-  ha-card.compact .footer {
-    display: none;
-  }
-
-  ha-card.compact .gauge {
-    --ubc-gauge-size: 100px;
-  }
-
-  ha-card.compact .main-gauge .gauge-center ha-icon {
-    --mdc-icon-size: 28px;
-  }
-
-  ha-card.compact .main-gauge .soc-value {
-    font-size: 1.4em;
-  }
-
-  ha-card.compact .main-gauge .energy-value {
-    display: none;
-  }
 `;
 
 const editorStyles = css`
@@ -711,7 +670,6 @@ const EDITOR_TABS = [
 const GENERAL_SCHEMA = [
   { name: 'name', label: 'Card Name', selector: { text: {} } },
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
-  { name: 'compact', label: 'Compact Mode', selector: { boolean: {} } },
   { name: 'gauge_thickness', label: 'Gauge Ring Thickness (%)', selector: { number: { min: 5, max: 15, mode: 'slider' } } },
   { name: 'header_style', label: 'Header Style', selector: { select: { options: [
     { value: 'full', label: 'Full Header' },
@@ -921,6 +879,7 @@ class UniversalBatteryCard extends LitElement {
     this._holdTimer = null;
     this._lastTap = 0;
     this._holdTriggered = false;
+    this._resizeObserver = null;
     // Bind methods for event listeners
     this._handleTapStart = this._handleTapStart.bind(this);
     this._handleTapEnd = this._handleTapEnd.bind(this);
@@ -932,6 +891,15 @@ class UniversalBatteryCard extends LitElement {
     this.addEventListener('touchstart', this._handleTapStart, { passive: true });
     this.addEventListener('touchend', this._handleTapEnd, { passive: true });
     this.addEventListener('touchcancel', this._handleTapCancel, { passive: true });
+
+    // Set up ResizeObserver for responsive sizing
+    this._resizeObserver = new ResizeObserver(entries => {
+      if (entries[0]) {
+        const { width, height } = entries[0].contentRect;
+        this._updateGaugeSize(width, height);
+      }
+    });
+    this._resizeObserver.observe(this);
   }
 
   disconnectedCallback() {
@@ -943,6 +911,10 @@ class UniversalBatteryCard extends LitElement {
       clearTimeout(this._holdTimer);
       this._holdTimer = null;
     }
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
   }
 
   setConfig(config) {
@@ -950,10 +922,95 @@ class UniversalBatteryCard extends LitElement {
     this._config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  _updateGaugeSize(containerWidth, containerHeight) {
+    if (!this._config) return;
+
+    // Calculate heights of fixed elements
+    const headerStyle = this._config.header_style ?? 'full';
+    const showRuntime = this._config.show_runtime !== false;
+    const showRates = this._config.show_rates !== false;
+    const hasRates = this._config.charge_rate_entity || this._config.charge_rate ||
+                     this._config.discharge_rate_entity || this._config.discharge_rate;
+    const showPowerGauge = hasRates && showRates;
+
+    // Approximate heights: full header ~96px, title ~30px, footer ~48px, padding 32px
+    const headerHeight = headerStyle === 'full' ? 96 : headerStyle === 'title' ? 30 : 0;
+    const footerHeight = showRuntime ? 48 : 0;
+    const verticalPadding = 32;
+    const gaugeContainerPadding = 20; // 10px top + 10px bottom
+
+    const availableHeight = containerHeight - headerHeight - footerHeight - verticalPadding - gaugeContainerPadding;
+
+    // Calculate width constraints
+    const horizontalPadding = 32; // 16px each side
+    const availableWidth = containerWidth - horizontalPadding;
+
+    // Dynamic gap: scales from 40px at wide widths down to 10px at narrow widths
+    const gaugeGap = Math.max(10, Math.min(40, (availableWidth - 200) * 0.15));
+
+    // Calculate max gauge size based on height
+    const maxGaugeFromHeight = availableHeight - 20;
+
+    // Calculate max gauge size based on width
+    let maxGaugeFromWidth;
+    if (showPowerGauge) {
+      // Two gauges: main (1x) + power (0.78x) + gap
+      // availableWidth = gaugeSize + gap + (gaugeSize * 0.78)
+      // availableWidth = gaugeSize * 1.78 + gap
+      maxGaugeFromWidth = (availableWidth - gaugeGap) / 1.78;
+    } else {
+      // Single gauge centered
+      maxGaugeFromWidth = availableWidth;
+    }
+
+    // Take the minimum of height and width constraints
+    const gaugeSize = Math.max(80, Math.min(200, maxGaugeFromHeight, maxGaugeFromWidth));
+    const powerGaugeSize = Math.round(gaugeSize * 0.78);
+
+    this.style.setProperty('--ubc-gauge-size', `${gaugeSize}px`);
+    this.style.setProperty('--ubc-power-gauge-size', `${powerGaugeSize}px`);
+    this.style.setProperty('--ubc-gauge-gap', `${gaugeGap}px`);
+
+    // Hide labels when gauge is too small:
+    // - Below 140px with header visible (overlaps header)
+    // - Below 120px always (labels overlap each other)
+    const hideLabels = gaugeSize < 120 || (headerStyle !== 'none' && gaugeSize < 140);
+    this.style.setProperty('--ubc-label-display', hideLabels ? 'none' : 'block');
+
+    // Hide stats panel when card is too narrow
+    this.style.setProperty('--ubc-stats-display', containerWidth < 350 ? 'none' : 'flex');
+  }
+
   getCardSize() {
-    if (this._config?.compact) return 3;
-    // Full design with gauges needs more vertical space
-    return 5;
+    // Per HA docs: 1 unit = 50 pixels
+    const headerStyle = this._config?.header_style ?? 'full';
+    const showRuntime = this._config?.show_runtime !== false;
+
+    // Base card padding (16px top + 16px bottom = 32px)
+    let size = 1;
+
+    // Header: full ~96px (2), title ~30px (1), none=0
+    if (headerStyle === 'full') size += 2;
+    else if (headerStyle === 'title') size += 1;
+
+    // Gauges: 180px + 20px padding = 200px (4 units)
+    size += 4;
+
+    // Footer: ~48px (1 unit)
+    if (showRuntime) size += 1;
+
+    return size;
+  }
+
+  static getGridOptions() {
+    return {
+      columns: 12,
+      rows: 7,
+      min_columns: 4,
+      max_columns: 12,
+      min_rows: 3,
+      max_rows: 10,
+    };
   }
 
   _handleTapStart(e) {
@@ -1047,14 +1104,23 @@ class UniversalBatteryCard extends LitElement {
       reserveWh = capacityWh * (reservePercent / 100);
     }
 
+    // Cutoff (max charge limit %) - calculated early for time estimates
+    const cutoffData = getEntityOrFixedValue(this.hass, config, 'cutoff_entity', 'cutoff', '%');
+    let cutoffPercent = null;
+    if (cutoffData.available && cutoffData.value !== null) {
+      cutoffPercent = cutoffData.value;
+    }
+
     // Time estimates
     let timeToTarget = null;
     let targetPercent = null;
 
     if (socEnergyWh !== null && capacityWh !== null && power !== 0) {
       if (status === 'charging') {
-        targetPercent = 100;
-        timeToTarget = calculateTimeToTarget(socEnergyWh, capacityWh, power);
+        // Use cutoff percentage if configured, otherwise 100%
+        targetPercent = cutoffPercent !== null ? cutoffPercent : 100;
+        const targetEnergy = capacityWh * (targetPercent / 100);
+        timeToTarget = calculateTimeToTarget(socEnergyWh, targetEnergy, power);
       } else if (status === 'discharging' && reservePercent !== null) {
         targetPercent = reservePercent;
         const targetEnergy = capacityWh * (reservePercent / 100);
@@ -1081,13 +1147,6 @@ class UniversalBatteryCard extends LitElement {
       if (power < 0 && dischargeRateW > 0) {
         dischargeRatePercent = Math.min(100, (Math.abs(power) / dischargeRateW) * 100);
       }
-    }
-
-    // Cutoff (max charge limit %)
-    const cutoffData = getEntityOrFixedValue(this.hass, config, 'cutoff_entity', 'cutoff', '%');
-    let cutoffPercent = null;
-    if (cutoffData.available && cutoffData.value !== null) {
-      cutoffPercent = cutoffData.value;
     }
 
     // Power percentage (relative to max rate)
@@ -1266,9 +1325,10 @@ class UniversalBatteryCard extends LitElement {
     // Gauge backgrounds
     const socGaugeBackground = this._getGaugeBackground(stats.socPercent, socColor);
 
-    // Power gauge: direction and color based on charging/discharging
+    // Power gauge: direction and color based on charging/discharging/idle
     const isCharging = stats.status === 'charging';
-    const powerGaugeColor = isCharging ? 'rgb(0, 128, 0)' : 'rgb(255, 166, 0)';
+    const isIdle = stats.status === 'idle';
+    const powerGaugeColor = isIdle ? 'var(--secondary-text-color)' : (isCharging ? 'rgb(0, 128, 0)' : 'rgb(255, 166, 0)');
     const powerGaugeBackground = this._getPowerGaugeBackground(stats.powerPercent, powerGaugeColor, isCharging);
 
     // Gauge thickness
@@ -1287,14 +1347,14 @@ class UniversalBatteryCard extends LitElement {
       if (stats.status === 'discharging') {
         footerText = `Runtime: ${durationFormatted}  |  Depletes At: ${etaFormatted}`;
       } else {
-        footerText = `Time to Full: ${durationFormatted}  |  Full At: ${etaFormatted}`;
+        const targetLabel = stats.cutoffPercent !== null ? `${Math.round(stats.cutoffPercent)}%` : 'Full';
+        footerText = `Time to ${targetLabel}: ${durationFormatted}  |  ${targetLabel} At: ${etaFormatted}`;
       }
     }
 
     return html`
       <ha-card
-        class="${this._config.compact ? 'compact' : ''}"
-        @mousedown=${this._handleTapStart}
+                @mousedown=${this._handleTapStart}
         @mouseup=${this._handleTapEnd}
         @mouseleave=${this._handleTapCancel}
       >
@@ -1426,7 +1486,7 @@ class UniversalBatteryCard extends LitElement {
 
   _renderLoading() {
     return html`
-      <ha-card class="${this._config.compact ? 'compact' : ''}">
+      <ha-card>
         <div class="header">
           <div class="header-left">
             <div class="title-row">
@@ -1460,6 +1520,7 @@ window.customCards.push({
   name: CARD_NAME,
   description: CARD_DESCRIPTION,
   preview: true,
+  documentationURL: 'https://github.com/laurence-syree/universal-battery-card',
 });
 
 console.info(
