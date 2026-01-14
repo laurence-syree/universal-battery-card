@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
