@@ -264,43 +264,6 @@ function fireEvent(node, type, detail = {}) {
   node.dispatchEvent(new CustomEvent(type, { bubbles: true, composed: true, detail }));
 }
 
-/**
- * Handles tap/hold/double-tap actions
- * @param {HTMLElement} node - Element that triggered the action
- * @param {Object} hass - Home Assistant instance
- * @param {Object} config - Card configuration
- * @param {Object} action - Action configuration (action, entity, etc.)
- */
-function handleAction(node, hass, config, action) {
-  if (!action || action.action === 'none') return;
-
-  switch (action.action) {
-    case 'more-info':
-      fireEvent(node, 'hass-more-info', { entityId: action.entity || config.soc_entity });
-      break;
-    case 'navigate':
-      if (action.navigation_path) {
-        window.history.pushState(null, '', action.navigation_path);
-        fireEvent(window, 'location-changed');
-      }
-      break;
-    case 'url':
-      if (action.url_path) {
-        window.open(action.url_path, action.new_tab ? '_blank' : '_self');
-      }
-      break;
-    case 'call-service':
-      if (action.service) {
-        const [domain, service] = action.service.split('.');
-        hass.callService(domain, service, action.service_data || {}, action.target || {});
-      }
-      break;
-    case 'fire-dom-event':
-      fireEvent(node, 'll-custom', action);
-      break;
-  }
-}
-
 // ============================================================================
 // STYLES
 // ============================================================================
@@ -322,17 +285,6 @@ const cardStyles = css`
     flex-direction: column;
     box-sizing: border-box;
     padding: 16px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: filter 0.2s ease;
-  }
-
-  ha-card:hover {
-    filter: brightness(1.1);
-  }
-
-  ha-card:active {
-    filter: brightness(1.2);
   }
 
   /* Header Section */
@@ -369,6 +321,11 @@ const cardStyles = css`
   .mode {
     font-size: 1em;
     color: var(--ubc-secondary-text);
+    cursor: pointer;
+  }
+
+  .mode:hover {
+    opacity: 0.8;
   }
 
   .title-row ha-icon {
@@ -383,6 +340,11 @@ const cardStyles = css`
     gap: 6px;
     font-size: 1.1em;
     color: var(--ubc-text-color);
+    cursor: pointer;
+  }
+
+  .state-row:hover {
+    opacity: 0.8;
   }
 
   .state-row ha-icon {
@@ -407,6 +369,11 @@ const cardStyles = css`
   .stat {
     font-size: 0.85em;
     color: var(--ubc-secondary-text);
+    cursor: pointer;
+  }
+
+  .stat:hover {
+    opacity: 0.8;
   }
 
   .stat span {
@@ -431,6 +398,11 @@ const cardStyles = css`
     display: flex;
     flex-direction: column;
     align-items: center;
+    cursor: pointer;
+  }
+
+  .gauge-wrapper:hover {
+    opacity: 0.9;
   }
 
   .gauge {
@@ -598,8 +570,8 @@ const cardStyles = css`
   /* Footer */
   .footer {
     text-align: center;
-    margin-top: 16px;
-    padding-top: 12px;
+    margin-top: 8px;
+    padding-top: 10px;
     border-top: 1px solid var(--divider-color, rgba(255,255,255,0.1));
     font-size: 0.95em;
     color: var(--ubc-secondary-text);
@@ -661,7 +633,6 @@ const EDITOR_TABS = [
   { id: 'general', label: 'General' },
   { id: 'entities', label: 'Entities' },
   { id: 'stats', label: 'Stats' },
-  { id: 'actions', label: 'Actions' },
   { id: 'soc', label: 'SOC Colors' },
   { id: 'icons', label: 'Icons' },
   { id: 'filters', label: 'Filters' },
@@ -734,36 +705,11 @@ const FILTERS_SCHEMA = [
   { name: 'trickle_charge_threshold', label: 'Filter Threshold (W)', selector: { number: { min: 0, max: 100, mode: 'slider' } } },
 ];
 
-const ACTIONS_SCHEMA = [
-  {
-    name: 'tap_action',
-    label: 'Tap Action',
-    selector: {
-      ui_action: {}
-    },
-  },
-  {
-    name: 'hold_action',
-    label: 'Hold Action',
-    selector: {
-      ui_action: {}
-    },
-  },
-  {
-    name: 'double_tap_action',
-    label: 'Double Tap Action',
-    selector: {
-      ui_action: {}
-    },
-  },
-];
-
 function getSchemaForTab(tabId) {
   switch (tabId) {
     case 'general': return GENERAL_SCHEMA;
     case 'entities': return ENTITIES_SCHEMA;
     case 'stats': return STATS_SCHEMA;
-    case 'actions': return ACTIONS_SCHEMA;
     case 'soc': return SOC_SCHEMA;
     case 'icons': return ICONS_SCHEMA;
     case 'filters': return FILTERS_SCHEMA;
@@ -876,22 +822,11 @@ class UniversalBatteryCard extends LitElement {
 
   constructor() {
     super();
-    this._holdTimer = null;
-    this._lastTap = 0;
-    this._holdTriggered = false;
     this._resizeObserver = null;
-    // Bind methods for event listeners
-    this._handleTapStart = this._handleTapStart.bind(this);
-    this._handleTapEnd = this._handleTapEnd.bind(this);
-    this._handleTapCancel = this._handleTapCancel.bind(this);
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this.addEventListener('touchstart', this._handleTapStart, { passive: true });
-    this.addEventListener('touchend', this._handleTapEnd, { passive: true });
-    this.addEventListener('touchcancel', this._handleTapCancel, { passive: true });
-
     // Set up ResizeObserver for responsive sizing
     this._resizeObserver = new ResizeObserver(entries => {
       if (entries[0]) {
@@ -904,13 +839,6 @@ class UniversalBatteryCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.removeEventListener('touchstart', this._handleTapStart);
-    this.removeEventListener('touchend', this._handleTapEnd);
-    this.removeEventListener('touchcancel', this._handleTapCancel);
-    if (this._holdTimer) {
-      clearTimeout(this._holdTimer);
-      this._holdTimer = null;
-    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -920,6 +848,12 @@ class UniversalBatteryCard extends LitElement {
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  _openMoreInfo(e, entityId) {
+    if (!entityId) return;
+    e.stopPropagation();
+    fireEvent(this, 'hass-more-info', { entityId });
   }
 
   _updateGaugeSize(containerWidth, containerHeight) {
@@ -1011,48 +945,6 @@ class UniversalBatteryCard extends LitElement {
       min_rows: 3,
       max_rows: 10,
     };
-  }
-
-  _handleTapStart(e) {
-    this._holdTriggered = false;
-    this._holdTimer = setTimeout(() => {
-      this._holdTriggered = true;
-      if (this._config.hold_action) {
-        handleAction(this, this.hass, this._config, this._config.hold_action);
-      }
-    }, 500);
-  }
-
-  _handleTapEnd(e) {
-    if (this._holdTimer) {
-      clearTimeout(this._holdTimer);
-      this._holdTimer = null;
-    }
-
-    if (this._holdTriggered) {
-      this._holdTriggered = false;
-      return;
-    }
-
-    const now = Date.now();
-    if (now - this._lastTap < 300 && this._config.double_tap_action) {
-      handleAction(this, this.hass, this._config, this._config.double_tap_action);
-      this._lastTap = 0;
-    } else {
-      this._lastTap = now;
-      setTimeout(() => {
-        if (this._lastTap === now && this._config.tap_action) {
-          handleAction(this, this.hass, this._config, this._config.tap_action);
-        }
-      }, 300);
-    }
-  }
-
-  _handleTapCancel() {
-    if (this._holdTimer) {
-      clearTimeout(this._holdTimer);
-      this._holdTimer = null;
-    }
   }
 
   _calculateStats() {
@@ -1353,22 +1245,17 @@ class UniversalBatteryCard extends LitElement {
     }
 
     return html`
-      <ha-card
-                @mousedown=${this._handleTapStart}
-        @mouseup=${this._handleTapEnd}
-        @mouseleave=${this._handleTapCancel}
-      >
+      <ha-card>
         <!-- Header -->
         ${this._config.header_style !== 'none' ? html`
           <div class="header">
             <div class="header-left">
               <div class="title-row">
                 <span class="title">${this._config.name}</span>
-                ${this._config.header_style === 'full' && modeText ? html`<span class="mode">| ${modeText}</span>` : ''}
-                ${this._config.header_style === 'full' ? html`<ha-icon icon="mdi:cog"></ha-icon>` : ''}
+                ${this._config.header_style === 'full' ? html`<span class="mode" @click=${(e) => this._openMoreInfo(e, this._config.mode_entity)}>${modeText ? `| ${modeText}` : ''} <ha-icon icon="mdi:cog"></ha-icon></span>` : ''}
               </div>
               ${this._config.header_style === 'full' ? html`
-                <div class="state-row">
+                <div class="state-row" @click=${(e) => this._openMoreInfo(e, this._config.state_entity)}>
                   Mode: ${stateEntityText ? stateEntityText : statusText}
                   <ha-icon icon="${statusIcon}"></ha-icon>
                 </div>
@@ -1380,13 +1267,13 @@ class UniversalBatteryCard extends LitElement {
             ${this._config.header_style === 'full' && stats.hasStats ? html`
               <div class="stats-panel">
                 ${stats.temp !== null ? html`
-                  <div class="stat">Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
+                  <div class="stat" @click=${(e) => this._openMoreInfo(e, this._config.temp_entity)}>Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
                 ` : ''}
                 ${stats.cycles !== null ? html`
-                  <div class="stat">Battery Cycles: <span>${stats.cycles}</span></div>
+                  <div class="stat" @click=${(e) => this._openMoreInfo(e, this._config.cycles_entity)}>Battery Cycles: <span>${stats.cycles}</span></div>
                 ` : ''}
                 ${stats.health !== null ? html`
-                  <div class="stat">Battery Health: <span>${stats.health}%</span></div>
+                  <div class="stat" @click=${(e) => this._openMoreInfo(e, this._config.health_entity)}>Battery Health: <span>${stats.health}%</span></div>
                 ` : ''}
               </div>
             ` : ''}
@@ -1396,7 +1283,7 @@ class UniversalBatteryCard extends LitElement {
         <!-- Gauges -->
         <div class="gauges-container">
           <!-- Main SOC Gauge -->
-          <div class="gauge-wrapper main-gauge-wrapper">
+          <div class="gauge-wrapper main-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.soc_entity)}>
             <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
               <!-- Rounded end caps -->
               ${stats.socPercent > 0 ? html`
@@ -1431,7 +1318,7 @@ class UniversalBatteryCard extends LitElement {
 
           <!-- Power Gauge (only if rates configured and enabled) -->
           ${hasRates && this._config.show_rates !== false ? html`
-            <div class="gauge-wrapper power-gauge-wrapper">
+            <div class="gauge-wrapper power-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.power_entity)}>
               <div class="gauge power-gauge" style="background: ${powerGaugeBackground}; --ring-thickness: ${thickness}%">
                 <!-- Rounded end caps -->
                 ${stats.powerPercent > 0 ? html`
