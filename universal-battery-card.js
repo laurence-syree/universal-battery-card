@@ -1172,12 +1172,12 @@ class UniversalBatteryCard extends LitElement {
       return this._renderLoading();
     }
 
-    // Check required entities
-    if (!this._config.soc_entity || !entityExists(this.hass, this._config.soc_entity)) {
-      return this._renderError('SOC Entity not configured or not found');
-    }
-    if (!this._config.power_entity || !entityExists(this.hass, this._config.power_entity)) {
-      return this._renderError('Power Entity not configured or not found');
+    // Check required entities - show preview if not configured
+    const socMissing = !this._config.soc_entity || !entityExists(this.hass, this._config.soc_entity);
+    const powerMissing = !this._config.power_entity || !entityExists(this.hass, this._config.power_entity);
+
+    if (socMissing || powerMissing) {
+      return this._renderPreview();
     }
 
     const stats = this._calculateStats();
@@ -1388,6 +1388,45 @@ class UniversalBatteryCard extends LitElement {
               <div class="gauge-center">
                 <ha-icon icon="mdi:battery-50" class="skeleton"></ha-icon>
                 <span class="soc-value skeleton">--%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </ha-card>
+    `;
+  }
+
+  _renderPreview() {
+    // Demo values for preview
+    const socPercent = 72;
+    const socColor = 'rgb(0, 128, 0)';
+    const thickness = this._config.gauge_thickness ?? 15;
+    const socCapPos = this._getCapPosition(socPercent, thickness);
+    const socGaugeBackground = this._getGaugeBackground(socPercent, socColor);
+
+    return html`
+      <ha-card>
+        <div class="header">
+          <div class="header-left">
+            <div class="title-row">
+              <span class="title">${this._config.name}</span>
+            </div>
+            <div class="state-row" style="opacity: 0.6">
+              Configure entities to get started
+            </div>
+          </div>
+        </div>
+        <div class="gauges-container">
+          <div class="gauge-wrapper main-gauge-wrapper">
+            <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
+              ${socPercent > 0 ? html`
+                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
+                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
+              ` : ''}
+              <div class="gauge-center">
+                <ha-icon icon="mdi:battery-70" style="color: ${socColor}"></ha-icon>
+                <span class="soc-value" style="color: ${socColor}">${socPercent}%</span>
+                <span class="energy-value">3.74 kWh</span>
               </div>
             </div>
           </div>

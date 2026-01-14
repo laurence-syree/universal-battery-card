@@ -6,18 +6,18 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 
 ## Features
 
-- **SOC Display**: Battery state of charge percentage with color-coded icon
-- **Energy Display**: Current battery energy in Wh/kWh
-- **Power Flow**: Real-time charge/discharge power with direction indicator
-- **Time Estimates**: Estimated time to target and ETA
+- **Circular Gauges**: SOC gauge with color-coded ring and optional power gauge
+- **Responsive Sizing**: Automatically scales to fit Home Assistant's Sections view grid
+- **Entity-Specific Clicks**: Click any element to open its entity's more-info dialog
+- **Power Flow**: Real-time charge/discharge with directional fill (clockwise for charging, counter-clockwise for discharging)
+- **Time Estimates**: Estimated time to full/empty and ETA
+- **Stats Panel**: Optional temperature, cycle count, and health display
+- **Reserve & Cutoff Markers**: Visual indicators on the SOC gauge
 - **Color Thresholds**: 5 customizable SOC levels with individual colors
-- **Custom Status**: Optional entity for custom state text display
-- **Mode Display**: Optional entity to show current battery mode
-- **Fixed Values**: Use entities or fixed values for capacity, reserve, and rates
-- **Tap Actions**: Configurable tap, hold, and double-tap actions
+- **Fixed Values**: Use entities or fixed values for capacity, reserve, rates, and cutoff
 - **Trickle Charge Filter**: Filter out small power fluctuations
 - **Custom Icons**: Configurable icons for charging, discharging, and idle states
-- **Compact Mode**: Reduced height layout for dashboard space optimization
+- **Header Styles**: Full, title-only, or no header options
 - **Loading State**: Skeleton UI while waiting for entity data
 - **Visual Editor**: Full point-and-click configuration UI
 
@@ -62,6 +62,10 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 | `reserve_entity` | Battery reserve percentage (or use fixed `reserve`) |
 | `charge_rate_entity` | Max charge rate (or use fixed `charge_rate`) |
 | `discharge_rate_entity` | Max discharge rate (or use fixed `discharge_rate`) |
+| `cutoff_entity` | Max charge cutoff percentage (or use fixed `cutoff`) |
+| `temp_entity` | Battery temperature sensor |
+| `cycles_entity` | Battery cycle count sensor |
+| `health_entity` | Battery health percentage sensor |
 
 ### Fixed Values
 
@@ -73,6 +77,17 @@ Instead of entities, you can set fixed values:
 | `reserve` | Fixed reserve percentage |
 | `charge_rate` | Fixed max charge rate in W |
 | `discharge_rate` | Fixed max discharge rate in W |
+| `cutoff` | Fixed max charge cutoff percentage |
+
+### Display Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `header_style` | `full` | Header display: `full`, `title`, or `none` |
+| `show_runtime` | `true` | Show time estimates in footer |
+| `show_rates` | `true` | Show power gauge (requires charge/discharge rates) |
+| `gauge_thickness` | `15` | Ring thickness as percentage (5-15) |
+| `decimal_places` | `3` | Decimal places for energy values |
 
 ### Example Configuration
 
@@ -84,8 +99,11 @@ power_entity: sensor.battery_power
 soc_energy_entity: sensor.battery_soc_kwh
 capacity: 5.2
 reserve: 4
+cutoff: 90
 state_entity: sensor.battery_state
 mode_entity: input_select.battery_mode
+temp_entity: sensor.battery_temperature
+cycles_entity: sensor.battery_cycles
 ```
 
 ### Minimal Configuration
@@ -123,21 +141,6 @@ icon_discharging: mdi:home-export-outline
 icon_idle: mdi:sleep
 ```
 
-### Tap Actions
-
-```yaml
-tap_action:
-  action: more-info
-  entity: sensor.battery_soc
-hold_action:
-  action: navigate
-  navigation_path: /lovelace/energy
-double_tap_action:
-  action: none
-```
-
-Supported actions: `more-info`, `navigate`, `url`, `call-service`, `none`
-
 ### Trickle Charge Filter
 
 ```yaml
@@ -145,21 +148,27 @@ enable_trickle_charge_filter: true
 trickle_charge_threshold: 25  # Watts
 ```
 
-### Compact Mode
+## Click Behavior
 
-Enable compact mode for a smaller card that hides time estimates, energy display, and rate bars:
+Clicking on card elements opens the more-info dialog for the associated entity:
 
-```yaml
-compact: true
-```
+| Element | Entity |
+|---------|--------|
+| SOC gauge | `soc_entity` |
+| Power gauge | `power_entity` |
+| Temperature stat | `temp_entity` |
+| Cycles stat | `cycles_entity` |
+| Health stat | `health_entity` |
+| Mode/cog icon | `mode_entity` |
+| State row | `state_entity` |
 
 ## Visual Editor
 
 The card includes a full visual configuration editor. Click "Edit" on any card to access tabs for:
 
-- **General**: Card name, decimal places, compact mode
+- **General**: Card name, decimal places, header style, display toggles, gauge thickness
 - **Entities**: All sensor/entity pickers and fixed values
-- **Actions**: Tap, hold, and double-tap actions
+- **Stats**: Temperature, cycles, and health entities
 - **SOC Colors**: Threshold percentages and colors
 - **Icons**: Custom status icons
 - **Filters**: Trickle charge settings
