@@ -23,9 +23,6 @@ const DEFAULT_CONFIG = {
   soc_colour_low: [219, 68, 55],
   soc_colour_very_low: [139, 0, 0],
   decimal_places: 3,
-  icon_charging: 'mdi:lightning-bolt',
-  icon_discharging: 'mdi:home-export-outline',
-  icon_idle: 'mdi:sleep',
   enable_trickle_charge_filter: false,
   trickle_charge_threshold: 25,
   // New v2.0 options
@@ -221,19 +218,6 @@ function getSocColor(socPercent, config) {
   return `rgb(${veryLow[0]}, ${veryLow[1]}, ${veryLow[2]})`;
 }
 
-/**
- * Gets the MDI icon for a battery status
- * @param {'charging'|'discharging'|'idle'} status - Battery status
- * @param {Object} config - Card configuration with icon settings
- * @returns {string} MDI icon name
- */
-function getStatusIcon(status, config) {
-  switch (status) {
-    case 'charging': return config.icon_charging ?? 'mdi:lightning-bolt';
-    case 'discharging': return config.icon_discharging ?? 'mdi:home-export-outline';
-    default: return config.icon_idle ?? 'mdi:sleep';
-  }
-}
 
 /**
  * Gets the battery level icon for a SOC percentage
@@ -634,7 +618,6 @@ const EDITOR_TABS = [
   { id: 'entities', label: 'Entities' },
   { id: 'stats', label: 'Stats' },
   { id: 'soc', label: 'SOC Colors' },
-  { id: 'icons', label: 'Icons' },
   { id: 'filters', label: 'Filters' },
 ];
 
@@ -694,12 +677,6 @@ const SOC_SCHEMA = [
   { name: 'soc_colour_very_low', label: 'Very Low Color', selector: { color_rgb: {} } },
 ];
 
-const ICONS_SCHEMA = [
-  { name: 'icon_charging', label: 'Charging Icon', selector: { icon: {} } },
-  { name: 'icon_discharging', label: 'Discharging Icon', selector: { icon: {} } },
-  { name: 'icon_idle', label: 'Idle Icon', selector: { icon: {} } },
-];
-
 const FILTERS_SCHEMA = [
   { name: 'enable_trickle_charge_filter', label: 'Enable Trickle Charge Filter', selector: { boolean: {} } },
   { name: 'trickle_charge_threshold', label: 'Filter Threshold (W)', selector: { number: { min: 0, max: 100, mode: 'slider' } } },
@@ -711,7 +688,6 @@ function getSchemaForTab(tabId) {
     case 'entities': return ENTITIES_SCHEMA;
     case 'stats': return STATS_SCHEMA;
     case 'soc': return SOC_SCHEMA;
-    case 'icons': return ICONS_SCHEMA;
     case 'filters': return FILTERS_SCHEMA;
     default: return [];
   }

@@ -16,7 +16,6 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 - **Color Thresholds**: 5 customizable SOC levels with individual colors
 - **Fixed Values**: Use entities or fixed values for capacity, reserve, rates, and cutoff
 - **Trickle Charge Filter**: Filter out small power fluctuations
-- **Custom Icons**: Configurable icons for charging, discharging, and idle states
 - **Header Styles**: Full, title-only, or no header options
 - **Loading State**: Skeleton UI while waiting for entity data
 - **Visual Editor**: Full point-and-click configuration UI
@@ -133,14 +132,6 @@ soc_colour_very_low: [139, 0, 0]
 
 Note: "Very Low" color applies to any SOC below the "Low" threshold.
 
-### Custom Icons
-
-```yaml
-icon_charging: mdi:lightning-bolt
-icon_discharging: mdi:home-export-outline
-icon_idle: mdi:sleep
-```
-
 ### Trickle Charge Filter
 
 ```yaml
@@ -170,7 +161,6 @@ The card includes a full visual configuration editor. Click "Edit" on any card t
 - **Entities**: All sensor/entity pickers and fixed values
 - **Stats**: Temperature, cycles, and health entities
 - **SOC Colors**: Threshold percentages and colors
-- **Icons**: Custom status icons
 - **Filters**: Trickle charge settings
 
 ## Development
