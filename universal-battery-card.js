@@ -35,7 +35,7 @@ const DEFAULT_CONFIG = {
   show_runtime: true,
   show_rates: true,
   header_style: 'full', // 'none', 'title', 'full'
-  reverse_power_polarity: false,
+  invert_power: false,
 };
 
 // ============================================================================
@@ -639,7 +639,7 @@ const ENTITIES_SCHEMA = [
   // Required Sensors
   { name: 'soc_entity', label: 'SOC Entity', selector: { entity: { domain: 'sensor' } } },
   { name: 'power_entity', label: 'Power Entity', selector: { entity: { domain: 'sensor' } } },
-  { name: 'reverse_power_polarity', label: 'Reverse Power Polarity', selector: { boolean: {} } },
+  { name: 'invert_power', label: 'Invert Power Value', selector: { boolean: {} } },
   // Status Display (Optional)
   { name: 'state_entity', label: 'State Entity (overrides auto-detect)', selector: { entity: {} } },
   { name: 'mode_entity', label: 'Mode Entity (e.g. input_select)', selector: { entity: { domain: ['input_select', 'select', 'sensor'] } } },
@@ -941,11 +941,9 @@ class UniversalBatteryCard extends LitElement {
 
     let power = powerValue.value;
     if ((powerValue.unit || '').toLowerCase() === 'kw') power *= 1000;
+    if (config.invert_power) power = -power;
     if (config.enable_trickle_charge_filter && Math.abs(power) < (config.trickle_charge_threshold ?? 25)) {
       power = 0;
-    }
-    if (config.reverse_power_polarity) {
-      power = -power;
     }
 
     const status = getBatteryStatus(power, 0);
