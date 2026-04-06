@@ -10,6 +10,7 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 - **Responsive Sizing**: Automatically scales to fit Home Assistant's Sections view grid
 - **Entity-Specific Clicks**: Click any element to open its entity's more-info dialog
 - **Power Flow**: Real-time charge/discharge with directional fill (clockwise for charging, counter-clockwise for discharging)
+- **Power Inversion**: Option to invert power value sign for compatibility with different sensor configurations
 - **Time Estimates**: Estimated time to full/empty and ETA
 - **Stats Panel**: Optional temperature, cycle count, and health display
 - **Reserve & Cutoff Markers**: Visual indicators on the SOC gauge
