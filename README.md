@@ -93,6 +93,7 @@ Instead of entities, you can set fixed values:
 | `show_capacity` | `true` | Show the "Capacity" row in the header (requires `header_style: full`) |
 | `show_stats` | `true` | Show the temp/cycles/health stats panel in the header (requires `header_style: full`) |
 | `gauge_thickness` | `15` | Ring thickness as percentage (5-15) |
+| `power_gauge_scale` | `78` | Power gauge size as % of main gauge (30-100) |
 | `decimal_places` | `3` | Decimal places for energy values |
 
 ### Example Configuration

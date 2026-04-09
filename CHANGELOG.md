@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.3.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.3.0) - 2026-04-09
+
+- Add `power_gauge_scale` option to configure power gauge size relative to main gauge (30-100%, default 78)
+
 ## [v2.2.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.2.0) - 2026-04-09
 
 - Add granular display toggles: `show_rate_labels`, `show_power_percent`, `show_power_direction`, `show_gauge_labels`, `show_capacity`, `show_stats` (@ParaDoXke - #4)

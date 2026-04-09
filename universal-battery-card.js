@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -32,6 +32,7 @@ const DEFAULT_CONFIG = {
   cutoff_entity: null,
   cutoff: null,
   gauge_thickness: 15, // Ring thickness as % of gauge (5-15, default 15)
+  power_gauge_scale: 78, // Power gauge size as % of main gauge (30-100, default 78)
   show_runtime: true,
   show_rates: true,
   show_rate_labels: true,
@@ -632,6 +633,7 @@ const GENERAL_SCHEMA = [
   { name: 'name', label: 'Card Name', selector: { text: {} } },
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
   { name: 'gauge_thickness', label: 'Gauge Ring Thickness (%)', selector: { number: { min: 5, max: 15, mode: 'slider' } } },
+  { name: 'power_gauge_scale', label: 'Power Gauge Size vs Main Gauge (%)', selector: { number: { min: 30, max: 100, mode: 'slider' } } },
   { name: 'header_style', label: 'Header Style', selector: { select: { options: [
     { value: 'full', label: 'Full Header' },
     { value: 'title', label: 'Title Only' },
@@ -838,6 +840,10 @@ class UniversalBatteryCard extends LitElement {
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...DEFAULT_CONFIG, ...config };
+    // Re-run sizing so options like power_gauge_scale apply live in the editor
+    if (this.isConnected && this.clientWidth > 0) {
+      this._updateGaugeSize(this.clientWidth, this.clientHeight);
+    }
   }
 
   _openMoreInfo(e, entityId) {
@@ -875,13 +881,15 @@ class UniversalBatteryCard extends LitElement {
     // Calculate max gauge size based on height
     const maxGaugeFromHeight = availableHeight - 20;
 
+    // Power gauge scale relative to main gauge (clamped 30-100%)
+    const powerScale = Math.max(30, Math.min(100, this._config.power_gauge_scale ?? 78)) / 100;
+
     // Calculate max gauge size based on width
     let maxGaugeFromWidth;
     if (showPowerGauge) {
-      // Two gauges: main (1x) + power (0.78x) + gap
-      // availableWidth = gaugeSize + gap + (gaugeSize * 0.78)
-      // availableWidth = gaugeSize * 1.78 + gap
-      maxGaugeFromWidth = (availableWidth - gaugeGap) / 1.78;
+      // Two gauges: main (1x) + power (powerScale x) + gap
+      // availableWidth = gaugeSize * (1 + powerScale) + gap
+      maxGaugeFromWidth = (availableWidth - gaugeGap) / (1 + powerScale);
     } else {
       // Single gauge centered
       maxGaugeFromWidth = availableWidth;
@@ -889,7 +897,7 @@ class UniversalBatteryCard extends LitElement {
 
     // Take the minimum of height and width constraints
     const gaugeSize = Math.max(80, Math.min(200, maxGaugeFromHeight, maxGaugeFromWidth));
-    const powerGaugeSize = Math.round(gaugeSize * 0.78);
+    const powerGaugeSize = Math.round(gaugeSize * powerScale);
 
     this.style.setProperty('--ubc-gauge-size', `${gaugeSize}px`);
     this.style.setProperty('--ubc-power-gauge-size', `${powerGaugeSize}px`);
