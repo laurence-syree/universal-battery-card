@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.2.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.2.0) - 2026-04-09
+
+- Add granular display toggles: `show_rate_labels`, `show_power_percent`, `show_power_direction`, `show_gauge_labels`, `show_capacity`, `show_stats` (@ParaDoXke - #4)
+
 ## [v2.1.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.1.0) - 2026-04-06
 
 - Add `invert_power` option to reverse power entity value sign (@cbrosius - #3)

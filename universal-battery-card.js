@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -34,6 +34,12 @@ const DEFAULT_CONFIG = {
   gauge_thickness: 15, // Ring thickness as % of gauge (5-15, default 15)
   show_runtime: true,
   show_rates: true,
+  show_rate_labels: true,
+  show_gauge_labels: true,
+  show_power_percent: true,
+  show_power_direction: true,
+  show_capacity: true,
+  show_stats: true,
   header_style: 'full', // 'none', 'title', 'full'
   invert_power: false,
 };
@@ -632,7 +638,13 @@ const GENERAL_SCHEMA = [
     { value: 'none', label: 'No Title' },
   ] } } },
   { name: 'show_runtime', label: 'Display Runtime/Depletion Times', selector: { boolean: {} } },
-  { name: 'show_rates', label: 'Display Charge/Discharge Rates', selector: { boolean: {} } },
+  { name: 'show_rates', label: 'Display Power Gauge (Charge/Discharge Rates)', selector: { boolean: {} } },
+  { name: 'show_rate_labels', label: 'Display Max Charge/Discharge Labels', selector: { boolean: {} } },
+  { name: 'show_power_percent', label: 'Display Power Percentage', selector: { boolean: {} } },
+  { name: 'show_power_direction', label: 'Display Power Direction Label', selector: { boolean: {} } },
+  { name: 'show_gauge_labels', label: 'Display Reserve/Cutoff Labels', selector: { boolean: {} } },
+  { name: 'show_capacity', label: 'Display Capacity in Header', selector: { boolean: {} } },
+  { name: 'show_stats', label: 'Display Stats Panel (Temp/Cycles/Health)', selector: { boolean: {} } },
 ];
 
 const ENTITIES_SCHEMA = [
@@ -1238,12 +1250,12 @@ class UniversalBatteryCard extends LitElement {
                   Mode: ${stateEntityText ? stateEntityText : statusText}
                   <ha-icon icon="${statusIcon}"></ha-icon>
                 </div>
-                ${capacityFormatted ? html`
+                ${capacityFormatted && this._config.show_capacity !== false ? html`
                   <div class="capacity-row">Capacity: ${capacityFormatted.value} ${capacityFormatted.unit}</div>
                 ` : ''}
               ` : ''}
             </div>
-            ${this._config.header_style === 'full' && stats.hasStats ? html`
+            ${this._config.header_style === 'full' && stats.hasStats && this._config.show_stats !== false ? html`
               <div class="stats-panel">
                 ${stats.temp !== null ? html`
                   <div class="stat" @click=${(e) => this._openMoreInfo(e, this._config.temp_entity)}>Battery Temp: <span>${stats.temp}${stats.tempUnit}</span></div>
@@ -1285,14 +1297,16 @@ class UniversalBatteryCard extends LitElement {
               </div>
             </div>
             <!-- Labels outside gauge -->
-            <div class="gauge-labels">
-              ${stats.reservePercent !== null ? html`
-                <div class="gauge-label reserve">Reserve ${Math.round(stats.reservePercent)}%</div>
-              ` : ''}
-              ${stats.cutoffPercent !== null ? html`
-                <div class="gauge-label cutoff">Cutoff ${Math.round(stats.cutoffPercent)}%</div>
-              ` : ''}
-            </div>
+            ${this._config.show_gauge_labels !== false ? html`
+              <div class="gauge-labels">
+                ${stats.reservePercent !== null ? html`
+                  <div class="gauge-label reserve">Reserve ${Math.round(stats.reservePercent)}%</div>
+                ` : ''}
+                ${stats.cutoffPercent !== null ? html`
+                  <div class="gauge-label cutoff">Cutoff ${Math.round(stats.cutoffPercent)}%</div>
+                ` : ''}
+              </div>
+            ` : ''}
           </div>
 
           <!-- Power Gauge (only if rates configured and enabled) -->
@@ -1305,28 +1319,34 @@ class UniversalBatteryCard extends LitElement {
                   <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.y}%; left: ${powerCapPos.x}%;"></div>
                 ` : ''}
                 <div class="gauge-center">
-                  <span class="power-percent">${Math.round(stats.powerPercent)}%</span>
+                  ${this._config.show_power_percent !== false ? html`
+                    <span class="power-percent">${Math.round(stats.powerPercent)}%</span>
+                  ` : ''}
                   <span class="power-value" style="color: ${powerGaugeColor}">${powerFormatted.value} ${powerFormatted.unit}</span>
-                  <span class="power-direction">
-                    ${powerDirection}
-                    ${powerIcon ? html`<ha-icon icon="${powerIcon}" style="color: ${powerGaugeColor}"></ha-icon>` : ''}
-                  </span>
+                  ${this._config.show_power_direction !== false ? html`
+                    <span class="power-direction">
+                      ${powerDirection}
+                      ${powerIcon ? html`<ha-icon icon="${powerIcon}" style="color: ${powerGaugeColor}"></ha-icon>` : ''}
+                    </span>
+                  ` : ''}
                 </div>
               </div>
-              <div class="rate-labels">
-                ${dischargeRateFormatted ? html`
-                  <div class="rate-label-item">
-                    Max Discharge
-                    <span>${dischargeRateFormatted.value} ${dischargeRateFormatted.unit}</span>
-                  </div>
-                ` : ''}
-                ${chargeRateFormatted ? html`
-                  <div class="rate-label-item">
-                    Max Charge
-                    <span>${chargeRateFormatted.value} ${chargeRateFormatted.unit}</span>
-                  </div>
-                ` : ''}
-              </div>
+              ${this._config.show_rate_labels !== false ? html`
+                <div class="rate-labels">
+                  ${dischargeRateFormatted ? html`
+                    <div class="rate-label-item">
+                      Max Discharge
+                      <span>${dischargeRateFormatted.value} ${dischargeRateFormatted.unit}</span>
+                    </div>
+                  ` : ''}
+                  ${chargeRateFormatted ? html`
+                    <div class="rate-label-item">
+                      Max Charge
+                      <span>${chargeRateFormatted.value} ${chargeRateFormatted.unit}</span>
+                    </div>
+                  ` : ''}
+                </div>
+              ` : ''}
             </div>
           ` : ''}
         </div>
