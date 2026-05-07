@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Overhaul gauge sizing so gauges fill available space at any card size or aspect ratio (#6)
+- Remove the hard-coded 200 px gauge cap — gauges now grow to fill the tile they're given
+- Measure rendered header/footer heights instead of hard-coding them, so layout stays correct when title text wraps, themes change typography, or rows toggle on/off
+- Wrap ResizeObserver callbacks in requestAnimationFrame to batch with paint and prevent the "ResizeObserver loop" warning during editor drag-resize
+- `getGridOptions` reports `min_columns` / `min_rows` derived from the configured chrome so the resize handles snap to a size the card can actually render; no upper cap so HA's layout decides the maximum
+
 ## [v2.3.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.3.0) - 2026-04-09
 
 - Add `power_gauge_scale` option to configure power gauge size relative to main gauge (30-100%, default 78)

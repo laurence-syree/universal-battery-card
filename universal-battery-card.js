@@ -46,6 +46,43 @@ const DEFAULT_CONFIG = {
 };
 
 // ============================================================================
+// LAYOUT CONSTANTS
+// ============================================================================
+
+// Gauge sizing
+const HARD_FLOOR_PX = 40;              // absolute minimum gauge diameter — below this gauges are unreadable
+const GAUGE_PADDING_PX = 20;           // .gauges-container has 10px top + 10px bottom
+
+// Card chrome
+const CARD_PADDING_X = 32;             // ha-card 16px left + 16px right
+const CARD_PADDING_Y = 32;             // ha-card 16px top + 16px bottom
+const HEADER_FALLBACK_FULL = 96;       // pre-render estimate for full header
+const HEADER_FALLBACK_TITLE = 30;      // pre-render estimate for title-only header
+const FOOTER_FALLBACK = 48;            // pre-render estimate for runtime footer
+
+// Gauge gap heuristic: ramps from MIN at narrow widths to MAX at wide widths.
+// `(availableWidth - WIDE) * SLOPE` is the ramp expression.
+const GAUGE_GAP_MIN = 10;
+const GAUGE_GAP_MAX = 40;
+const GAUGE_GAP_RAMP_WIDTH = 200;      // availableWidth at which ramp starts producing >MIN
+const GAUGE_GAP_RAMP_SLOPE = 0.15;
+
+// Encroach (gauges-into-header) decision
+const ENCROACH_SAFETY_PX = 24;         // breathing room between gauge edge and header text
+const ENCROACH_THRESHOLD_PX = 4;       // min size gain to bother engaging encroach
+
+// Auto-hide thresholds
+const LABELS_HIDE_BELOW_PX = 120;                // reserve/cutoff labels overlap below this
+const LABELS_HIDE_BELOW_PX_WITH_HEADER = 140;    // ...and earlier when a header is present
+const STATS_PANEL_HIDE_BELOW_PX = 350;           // stats panel hidden when card narrower than this
+
+// HA layout grid units
+const MASONRY_UNIT_PX = 50;            // masonry view: 1 getCardSize unit
+const SECTION_COL_PX = 30;             // sections view grid cell width
+const SECTION_ROW_PX = 56;             // sections view grid cell height
+const SECTION_GAP_PX = 8;              // gap between section cells
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -273,18 +310,33 @@ const cardStyles = css`
 
   ha-card {
     height: 100%;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: 1fr;
     box-sizing: border-box;
     padding: 16px;
   }
 
   /* Header Section */
   .header {
+    grid-row: 1;
+    grid-column: 1;
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 16px;
+    position: relative;
+    z-index: 1; /* keep header on top when gauges encroach into its vertical band */
+  }
+
+  /* Encroach mode: header and gauges share the top + middle rows.
+     Header pinned to top of the merged area; gauges centered behind. */
+  :host(.gauges-encroach-header) .header {
+    grid-row: 1 / 3;
+    align-self: start;
+  }
+  :host(.gauges-encroach-header) .gauges-container {
+    grid-row: 1 / 3;
   }
 
   .header-left {
@@ -292,7 +344,8 @@ const cardStyles = css`
     flex-direction: column;
     gap: 4px;
     min-width: 0;
-    flex: 1;
+    flex: 0 1 auto; /* size to content; can shrink for truncation, but don't grab middle space */
+    max-width: 100%;
   }
 
   .title-row {
@@ -375,7 +428,8 @@ const cardStyles = css`
 
   /* Gauges Container */
   .gauges-container {
-    flex: 1;
+    grid-row: 2;
+    grid-column: 1;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -561,6 +615,8 @@ const cardStyles = css`
 
   /* Footer */
   .footer {
+    grid-row: 3;
+    grid-column: 1;
     text-align: center;
     margin-top: 8px;
     padding-top: 10px;
@@ -819,12 +875,18 @@ class UniversalBatteryCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Set up ResizeObserver for responsive sizing
+    // Set up ResizeObserver for responsive sizing.
+    // Wrap in requestAnimationFrame to batch with paint and avoid the
+    // "ResizeObserver loop limit exceeded" warning during editor drag-resize.
     this._resizeObserver = new ResizeObserver(entries => {
-      if (entries[0]) {
-        const { width, height } = entries[0].contentRect;
-        this._updateGaugeSize(width, height);
-      }
+      if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = requestAnimationFrame(() => {
+        this._resizeRaf = null;
+        if (entries[0]) {
+          const { width, height } = entries[0].contentRect;
+          this._updateGaugeSize(width, height);
+        }
+      });
     });
     this._resizeObserver.observe(this);
   }
@@ -835,12 +897,29 @@ class UniversalBatteryCard extends LitElement {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
     }
+    if (this._resizeRaf) {
+      cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = null;
+    }
   }
 
   setConfig(config) {
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...DEFAULT_CONFIG, ...config };
+    // Bust the no-op cache so editor changes that don't alter output dimensions still re-evaluate.
+    this._lastSizing = null;
     // Re-run sizing so options like power_gauge_scale apply live in the editor
+    if (this.isConnected && this.clientWidth > 0) {
+      this._updateGaugeSize(this.clientWidth, this.clientHeight);
+    }
+  }
+
+  updated(changedProps) {
+    super.updated?.(changedProps);
+    // Re-measure after every render. State changes can alter header content
+    // (mode text, state row, entity availability) which changes header height
+    // and therefore the available gauge area. The no-op sizing cache absorbs
+    // redundant work when nothing actually changed.
     if (this.isConnected && this.clientWidth > 0) {
       this._updateGaugeSize(this.clientWidth, this.clientHeight);
     }
@@ -852,96 +931,162 @@ class UniversalBatteryCard extends LitElement {
     fireEvent(this, 'hass-more-info', { entityId });
   }
 
+  // Derive layout-relevant flags from the current config in one place.
+  _layoutFlags() {
+    const c = this._config ?? {};
+    const headerStyle = c.header_style ?? 'full';
+    const showRuntime = c.show_runtime !== false;
+    const showRates = c.show_rates !== false;
+    const hasRates = c.charge_rate_entity || c.charge_rate ||
+                     c.discharge_rate_entity || c.discharge_rate;
+    const showPowerGauge = hasRates && showRates;
+    const powerScale = Math.max(30, Math.min(100, c.power_gauge_scale ?? 78)) / 100;
+    return { headerStyle, showRuntime, showPowerGauge, powerScale };
+  }
+
+  // Static estimates for header/footer heights — used pre-render and by HA layout APIs.
+  _estimateChrome({ headerStyle, showRuntime }) {
+    const headerPx = headerStyle === 'full' ? HEADER_FALLBACK_FULL
+                   : headerStyle === 'title' ? HEADER_FALLBACK_TITLE : 0;
+    const footerPx = showRuntime ? FOOTER_FALLBACK : 0;
+    return { headerPx, footerPx };
+  }
+
+  // Measure rendered chrome where possible; fall back to estimates on first paint.
+  _measureChrome(flags) {
+    const fallback = this._estimateChrome(flags);
+    const headerEl = this.renderRoot?.querySelector?.('.header');
+    const footerEl = this.renderRoot?.querySelector?.('.footer');
+    return {
+      headerEl,
+      headerHeight: headerEl?.offsetHeight ?? fallback.headerPx,
+      footerHeight: footerEl?.offsetHeight ?? fallback.footerPx,
+    };
+  }
+
+  // Compute the auto gap between gauges given the current available width.
+  _computeGaugeGap(availableWidth, flags) {
+    const ramp = (availableWidth - GAUGE_GAP_RAMP_WIDTH) * GAUGE_GAP_RAMP_SLOPE;
+    let gap = Math.max(GAUGE_GAP_MIN, Math.min(GAUGE_GAP_MAX, ramp));
+    if (flags.showPowerGauge) {
+      // Don't let the gap eat so much width that two gauges can't fit at HARD_FLOOR.
+      const maxGap = Math.max(0, availableWidth - HARD_FLOOR_PX * (1 + flags.powerScale));
+      gap = Math.min(gap, maxGap);
+    }
+    return gap;
+  }
+
+  // Centered gauges encroach into the header's vertical band only when they horizontally
+  // clear both the header's left content block and right stats panel with margin to spare.
+  _isEncroachSafe(headerEl, totalGaugesWidth, containerWidth) {
+    if (!headerEl) return false;
+    const headerLeftEl = headerEl.querySelector?.('.header-left');
+    const statsEl = headerEl.querySelector?.('.stats-panel');
+    const leftWidth = headerLeftEl?.offsetWidth ?? 0;
+    const rightWidth = (statsEl && statsEl.offsetParent !== null) ? statsEl.offsetWidth : 0;
+    const middleSpace = containerWidth - CARD_PADDING_X - leftWidth - rightWidth - ENCROACH_SAFETY_PX * 2;
+    return totalGaugesWidth <= middleSpace;
+  }
+
+  // Apply computed sizing values to CSS vars / host class, with a no-op guard so
+  // unchanged frames don't trigger style recalculation (and don't risk RO loops).
+  _applySizing(values) {
+    const last = this._lastSizing;
+    if (last
+      && last.gaugeSize === values.gaugeSize
+      && last.powerGaugeSize === values.powerGaugeSize
+      && last.gaugeGap === values.gaugeGap
+      && last.labelDisplay === values.labelDisplay
+      && last.statsDisplay === values.statsDisplay
+      && last.useEncroach === values.useEncroach) {
+      return;
+    }
+    this._lastSizing = values;
+    this.style.setProperty('--ubc-gauge-size', `${values.gaugeSize}px`);
+    this.style.setProperty('--ubc-power-gauge-size', `${values.powerGaugeSize}px`);
+    this.style.setProperty('--ubc-gauge-gap', `${values.gaugeGap}px`);
+    this.style.setProperty('--ubc-label-display', values.labelDisplay);
+    this.style.setProperty('--ubc-stats-display', values.statsDisplay);
+    this.classList.toggle('gauges-encroach-header', values.useEncroach);
+  }
+
   _updateGaugeSize(containerWidth, containerHeight) {
     if (!this._config) return;
+    if (containerWidth <= 0 || containerHeight <= 0) return;
 
-    // Calculate heights of fixed elements
-    const headerStyle = this._config.header_style ?? 'full';
-    const showRuntime = this._config.show_runtime !== false;
-    const showRates = this._config.show_rates !== false;
-    const hasRates = this._config.charge_rate_entity || this._config.charge_rate ||
-                     this._config.discharge_rate_entity || this._config.discharge_rate;
-    const showPowerGauge = hasRates && showRates;
+    const flags = this._layoutFlags();
+    const { headerEl, headerHeight, footerHeight } = this._measureChrome(flags);
 
-    // Approximate heights: full header ~96px, title ~30px, footer ~48px, padding 32px
-    const headerHeight = headerStyle === 'full' ? 96 : headerStyle === 'title' ? 30 : 0;
-    const footerHeight = showRuntime ? 48 : 0;
-    const verticalPadding = 32;
-    const gaugeContainerPadding = 20; // 10px top + 10px bottom
+    // Vertical space accounting:
+    //   standardHeight  → gauges sit between header and footer
+    //   encroachHeight  → gauges allowed to extend into the header row
+    const fixedVertical = footerHeight + CARD_PADDING_Y + GAUGE_PADDING_PX;
+    const standardHeight = containerHeight - headerHeight - fixedVertical;
+    const encroachHeight = containerHeight - fixedVertical;
 
-    const availableHeight = containerHeight - headerHeight - footerHeight - verticalPadding - gaugeContainerPadding;
+    const availableWidth = containerWidth - CARD_PADDING_X;
+    let gaugeGap = this._computeGaugeGap(availableWidth, flags);
 
-    // Calculate width constraints
-    const horizontalPadding = 32; // 16px each side
-    const availableWidth = containerWidth - horizontalPadding;
+    const widthCap = flags.showPowerGauge
+      ? (availableWidth - gaugeGap) / (1 + flags.powerScale)
+      : availableWidth;
+    const standardSize = Math.min(widthCap, standardHeight - GAUGE_PADDING_PX);
+    const encroachSize = Math.min(widthCap, encroachHeight - GAUGE_PADDING_PX);
 
-    // Dynamic gap: scales from 40px at wide widths down to 10px at narrow widths
-    const gaugeGap = Math.max(10, Math.min(40, (availableWidth - 200) * 0.15));
-
-    // Calculate max gauge size based on height
-    const maxGaugeFromHeight = availableHeight - 20;
-
-    // Power gauge scale relative to main gauge (clamped 30-100%)
-    const powerScale = Math.max(30, Math.min(100, this._config.power_gauge_scale ?? 78)) / 100;
-
-    // Calculate max gauge size based on width
-    let maxGaugeFromWidth;
-    if (showPowerGauge) {
-      // Two gauges: main (1x) + power (powerScale x) + gap
-      // availableWidth = gaugeSize * (1 + powerScale) + gap
-      maxGaugeFromWidth = (availableWidth - gaugeGap) / (1 + powerScale);
-    } else {
-      // Single gauge centered
-      maxGaugeFromWidth = availableWidth;
+    // Engage encroach only when it grows the gauge meaningfully and is visually safe.
+    let useEncroach = false;
+    if (encroachSize > standardSize + ENCROACH_THRESHOLD_PX) {
+      const totalGaugesWidth = flags.showPowerGauge
+        ? encroachSize * (1 + flags.powerScale) + gaugeGap
+        : encroachSize;
+      useEncroach = this._isEncroachSafe(headerEl, totalGaugesWidth, containerWidth);
     }
 
-    // Take the minimum of height and width constraints
-    const gaugeSize = Math.max(80, Math.min(200, maxGaugeFromHeight, maxGaugeFromWidth));
-    const powerGaugeSize = Math.round(gaugeSize * powerScale);
+    const naturalSize = useEncroach ? encroachSize : standardSize;
+    const gaugeSize = Math.round(Math.max(HARD_FLOOR_PX, naturalSize));
+    const powerGaugeSize = Math.round(gaugeSize * flags.powerScale);
+    gaugeGap = Math.round(gaugeGap);
 
-    this.style.setProperty('--ubc-gauge-size', `${gaugeSize}px`);
-    this.style.setProperty('--ubc-power-gauge-size', `${powerGaugeSize}px`);
-    this.style.setProperty('--ubc-gauge-gap', `${gaugeGap}px`);
+    const hideLabels = gaugeSize < LABELS_HIDE_BELOW_PX
+      || (flags.headerStyle !== 'none' && gaugeSize < LABELS_HIDE_BELOW_PX_WITH_HEADER);
+    const labelDisplay = hideLabels ? 'none' : 'block';
+    const statsDisplay = containerWidth < STATS_PANEL_HIDE_BELOW_PX ? 'none' : 'flex';
 
-    // Hide labels when gauge is too small:
-    // - Below 140px with header visible (overlaps header)
-    // - Below 120px always (labels overlap each other)
-    const hideLabels = gaugeSize < 120 || (headerStyle !== 'none' && gaugeSize < 140);
-    this.style.setProperty('--ubc-label-display', hideLabels ? 'none' : 'block');
-
-    // Hide stats panel when card is too narrow
-    this.style.setProperty('--ubc-stats-display', containerWidth < 350 ? 'none' : 'flex');
+    this._applySizing({ gaugeSize, powerGaugeSize, gaugeGap, labelDisplay, statsDisplay, useEncroach });
   }
 
   getCardSize() {
-    // Per HA docs: 1 unit = 50 pixels
-    const headerStyle = this._config?.header_style ?? 'full';
-    const showRuntime = this._config?.show_runtime !== false;
-
-    // Base card padding (16px top + 16px bottom = 32px)
-    let size = 1;
-
-    // Header: full ~96px (2), title ~30px (1), none=0
-    if (headerStyle === 'full') size += 2;
-    else if (headerStyle === 'title') size += 1;
-
-    // Gauges: 180px + 20px padding = 200px (4 units)
-    size += 4;
-
-    // Footer: ~48px (1 unit)
-    if (showRuntime) size += 1;
-
-    return size;
+    // 1 unit = 50px (HA docs). Used by masonry view for height estimation.
+    // Deliberately static — runtime gauge size fills available space and isn't known
+    // ahead of layout; this just gives masonry a sensible initial slot (~200px gauges).
+    const flags = this._layoutFlags();
+    const { headerPx, footerPx } = this._estimateChrome(flags);
+    const defaultGaugeAreaPx = 200 + GAUGE_PADDING_PX;
+    const totalPx = CARD_PADDING_Y + headerPx + defaultGaugeAreaPx + footerPx;
+    return Math.ceil(totalPx / MASONRY_UNIT_PX);
   }
 
-  static getGridOptions() {
+  getGridOptions() {
+    // Compute floors from chrome estimates + a HARD_FLOOR gauge; HA decides ceilings.
+    const flags = this._layoutFlags();
+    const { headerPx, footerPx } = this._estimateChrome(flags);
+    const cellRow = SECTION_ROW_PX + SECTION_GAP_PX;
+    const cellCol = SECTION_COL_PX + SECTION_GAP_PX;
+
+    const minHeightPx = headerPx + footerPx + CARD_PADDING_Y + GAUGE_PADDING_PX + HARD_FLOOR_PX;
+    const minRows = Math.max(2, Math.ceil((minHeightPx + SECTION_GAP_PX) / cellRow));
+
+    const minGaugesPx = flags.showPowerGauge
+      ? HARD_FLOOR_PX * (1 + flags.powerScale) + GAUGE_GAP_MIN
+      : HARD_FLOOR_PX;
+    const minWidthPx = minGaugesPx + CARD_PADDING_X;
+    const minColumns = Math.max(3, Math.ceil((minWidthPx + SECTION_GAP_PX) / cellCol));
+
     return {
-      columns: 12,
-      rows: 7,
-      min_columns: 4,
-      max_columns: 12,
-      min_rows: 3,
-      max_rows: 10,
+      rows: Math.max(minRows, this.getCardSize()),
+      min_columns: minColumns,
+      min_rows: minRows,
+      // No max_columns / max_rows — HA's layout decides the ceiling.
     };
   }
 
