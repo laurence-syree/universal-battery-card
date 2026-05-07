@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [v2.4.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.4.0) - 2026-05-07
 
 - Overhaul gauge sizing so gauges fill available space at any card size or aspect ratio (#6)
 - Remove the hard-coded 200 px gauge cap — gauges now grow to fill the tile they're given
