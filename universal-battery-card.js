@@ -875,20 +875,35 @@ class UniversalBatteryCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Set up ResizeObserver for responsive sizing.
-    // Wrap in requestAnimationFrame to batch with paint and avoid the
-    // "ResizeObserver loop limit exceeded" warning during editor drag-resize.
-    this._resizeObserver = new ResizeObserver(entries => {
-      if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
-      this._resizeRaf = requestAnimationFrame(() => {
-        this._resizeRaf = null;
-        if (entries[0]) {
-          const { width, height } = entries[0].contentRect;
-          this._updateGaugeSize(width, height);
-        }
+    // Wrap in try/catch so a failure here (e.g. missing browser API on an old
+    // WebView) doesn't propagate up and render the card as a generic
+    // "Configuration error" — the card can still render at CSS-default sizes.
+    try {
+      if (typeof ResizeObserver === 'undefined') {
+        // Older WebViews (some Amazon Fire HD builds, pre-2018 browsers) lack
+        // ResizeObserver. The card renders at the static CSS defaults from
+        // cardStyles (--ubc-gauge-size: 180px, --ubc-power-gauge-size: 140px);
+        // responsive resizing is just disabled.
+        console.warn('[universal-battery-card] ResizeObserver unavailable; responsive sizing disabled');
+        return;
+      }
+      // Set up ResizeObserver for responsive sizing.
+      // Wrap callback in requestAnimationFrame to batch with paint and avoid the
+      // "ResizeObserver loop limit exceeded" warning during editor drag-resize.
+      this._resizeObserver = new ResizeObserver(entries => {
+        if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+        this._resizeRaf = requestAnimationFrame(() => {
+          this._resizeRaf = null;
+          if (entries[0]) {
+            const { width, height } = entries[0].contentRect;
+            this._updateGaugeSize(width, height);
+          }
+        });
       });
-    });
-    this._resizeObserver.observe(this);
+      this._resizeObserver.observe(this);
+    } catch (err) {
+      console.error('[universal-battery-card] connectedCallback failed:', err);
+    }
   }
 
   disconnectedCallback() {
