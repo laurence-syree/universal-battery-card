@@ -904,13 +904,81 @@ class UniversalBatteryCard extends LitElement {
   }
 
   setConfig(config) {
-    if (!config) throw new Error('Invalid configuration');
+    this._validateConfig(config);
     this._config = { ...DEFAULT_CONFIG, ...config };
     // Bust the no-op cache so editor changes that don't alter output dimensions still re-evaluate.
     this._lastSizing = null;
     // Re-run sizing so options like power_gauge_scale apply live in the editor
     if (this.isConnected && this.clientWidth > 0) {
       this._updateGaugeSize(this.clientWidth, this.clientHeight);
+    }
+  }
+
+  _validateConfig(config) {
+    if (!config || typeof config !== 'object') {
+      throw new Error('Configuration must be an object');
+    }
+
+    const inRange = (key, min, max) => {
+      const v = config[key];
+      if (v === undefined || v === null) return;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
+        throw new Error(`${key} must be a number between ${min} and ${max} (got ${JSON.stringify(v)})`);
+      }
+    };
+
+    // Numeric ranges (mirror the editor sliders/boxes)
+    inRange('decimal_places', 0, 4);
+    inRange('gauge_thickness', 5, 15);
+    inRange('power_gauge_scale', 30, 100);
+    inRange('trickle_charge_threshold', 0, 10000);
+    for (const k of ['soc_threshold_very_high', 'soc_threshold_high', 'soc_threshold_medium', 'soc_threshold_low']) {
+      inRange(k, 0, 100);
+    }
+
+    // SOC thresholds must be strictly descending (very_high > high > medium > low).
+    const merged = { ...DEFAULT_CONFIG, ...config };
+    const order = [
+      ['soc_threshold_very_high', merged.soc_threshold_very_high],
+      ['soc_threshold_high', merged.soc_threshold_high],
+      ['soc_threshold_medium', merged.soc_threshold_medium],
+      ['soc_threshold_low', merged.soc_threshold_low],
+    ];
+    for (let i = 1; i < order.length; i++) {
+      const [prevKey, prev] = order[i - 1];
+      const [key, val] = order[i];
+      if (val >= prev) {
+        throw new Error(`${prevKey} (${prev}) must be greater than ${key} (${val})`);
+      }
+    }
+
+    // SOC colors: either a CSS variable name (string) or an [r,g,b] tuple of 0-255 ints.
+    for (const k of ['soc_colour_very_high', 'soc_colour_high', 'soc_colour_medium', 'soc_colour_low', 'soc_colour_very_low']) {
+      const v = config[k];
+      if (v === undefined || v === null) continue;
+      if (typeof v === 'string') continue; // accept any string (CSS var / colour name)
+      if (!Array.isArray(v) || v.length !== 3 || !v.every(n => Number.isInteger(n) && n >= 0 && n <= 255)) {
+        throw new Error(`${k} must be a CSS variable name or an [r, g, b] array of integers 0-255 (got ${JSON.stringify(v)})`);
+      }
+    }
+
+    // header_style enum
+    if (config.header_style !== undefined && !['full', 'title', 'none'].includes(config.header_style)) {
+      throw new Error(`header_style must be 'full', 'title', or 'none' (got ${JSON.stringify(config.header_style)})`);
+    }
+
+    // Entity IDs: must look like 'domain.entity_id' when provided.
+    const entityKeys = [
+      'soc_entity', 'power_entity', 'capacity_entity', 'state_entity', 'mode_entity',
+      'temp_entity', 'cycles_entity', 'health_entity', 'cutoff_entity',
+      'charge_rate_entity', 'discharge_rate_entity',
+    ];
+    for (const k of entityKeys) {
+      const v = config[k];
+      if (!v) continue;
+      if (typeof v !== 'string' || !/^[a-z_]+\.[a-z0-9_]+$/.test(v)) {
+        throw new Error(`${k} must be an entity id like 'sensor.foo' (got ${JSON.stringify(v)})`);
+      }
     }
   }
 

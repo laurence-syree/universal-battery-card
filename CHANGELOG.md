@@ -7,6 +7,7 @@
 - Measure rendered header/footer heights instead of hard-coding them, so layout stays correct when title text wraps, themes change typography, or rows toggle on/off
 - Wrap ResizeObserver callbacks in requestAnimationFrame to batch with paint and prevent the "ResizeObserver loop" warning during editor drag-resize
 - `getGridOptions` reports `min_columns` / `min_rows` derived from the configured chrome so the resize handles snap to a size the card can actually render; no upper cap so HA's layout decides the maximum
+- Validate config at `setConfig` time with user-readable error messages (out-of-range numbers, inverted SOC thresholds, malformed colour tuples, bad entity IDs); HA surfaces these as red banners in the editor
 
 ## [v2.3.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.3.0) - 2026-04-09
 
