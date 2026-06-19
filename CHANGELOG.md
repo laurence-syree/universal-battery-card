@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.6.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.6.0)
+
+- Appear in the Home Assistant 2026.6 card picker (Community section) when a battery state-of-charge entity is selected, pre-filling it as `soc_entity` (`getEntitySuggestion`)
+
 ## [v2.5.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.5.0)
 
 - Add `date_format` (`auto` / `MM/DD` / `DD/MM`) and `time_format` (`auto` / `24` / `12`) options for the footer ETA. `auto` follows the Home Assistant locale, so dates/times match the user's region without manual patching (thanks @RadzuPL - #8)

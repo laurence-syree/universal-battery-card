@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -1787,6 +1787,16 @@ window.customCards.push({
   description: CARD_DESCRIPTION,
   preview: true,
   documentationURL: 'https://github.com/laurence-syree/universal-battery-card',
+  // HA 2026.6 card picker: suggest this card (Community section) when the user
+  // selects a battery state-of-charge sensor, pre-filling it as soc_entity.
+  getEntitySuggestion: (hass, entityId) => {
+    const st = hass?.states?.[entityId];
+    if (!st) return null;
+    const attrs = st.attributes || {};
+    const isBatterySoc = attrs.device_class === 'battery' && attrs.unit_of_measurement === '%';
+    if (!isBatterySoc) return null;
+    return { config: { type: 'custom:universal-battery-card', soc_entity: entityId } };
+  },
 });
 
 console.info(
