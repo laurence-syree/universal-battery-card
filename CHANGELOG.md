@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.5.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.5.0)
+
+- Add `date_format` (`auto` / `MM/DD` / `DD/MM`) and `time_format` (`auto` / `24` / `12`) options for the footer ETA. `auto` follows the Home Assistant locale, so dates/times match the user's region without manual patching (thanks @RadzuPL - #8)
+
 ## [v2.4.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.4.0) - 2026-05-07
 
 - Overhaul gauge sizing so gauges fill available space at any card size or aspect ratio (#6)

@@ -85,6 +85,8 @@ Instead of entities, you can set fixed values:
 |--------|---------|-------------|
 | `header_style` | `full` | Header display: `full`, `title`, or `none` |
 | `show_runtime` | `true` | Show time estimates in footer |
+| `date_format` | `auto` | Footer date format: `auto` (Home Assistant locale), `MM/DD`, or `DD/MM` |
+| `time_format` | `auto` | Footer time format: `auto` (Home Assistant locale), `24`, or `12` |
 | `show_rates` | `true` | Show power gauge (requires charge/discharge rates) |
 | `show_rate_labels` | `true` | Show "Max Charge" / "Max Discharge" labels below the power gauge |
 | `show_power_percent` | `true` | Show the power percentage inside the power gauge |

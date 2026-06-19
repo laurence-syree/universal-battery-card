@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.4.0';
+const VERSION = '2.5.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -43,6 +43,8 @@ const DEFAULT_CONFIG = {
   show_stats: true,
   header_style: 'full', // 'none', 'title', 'full'
   invert_power: false,
+  date_format: 'auto', // 'auto' (HA locale), 'MM/DD', 'DD/MM'
+  time_format: 'auto', // 'auto' (HA locale), '24', '12'
 };
 
 // ============================================================================
@@ -195,19 +197,104 @@ function formatDuration(minutes) {
 }
 
 /**
- * Calculates and formats estimated time of arrival
- * @param {number|null} minutes - Minutes from now
- * @returns {string} Formatted as 'MM/DD HH:MM' or '--/-- --:--'
+ * Resolves whether 12-hour time should be used, mirroring HA's own useAmPm()
+ * (home-assistant/frontend src/common/datetime/use_am_pm.ts).
+ * @param {string} timeFormat - card option: 'auto' | '24' | '12'
+ * @param {object|null} locale - hass.locale ({ language, time_format })
+ * @returns {boolean} true for 12-hour, false for 24-hour
  */
-function formatTimeOfArrival(minutes) {
+function resolveHour12(timeFormat, locale) {
+  if (timeFormat === '12') return true;
+  if (timeFormat === '24') return false;
+  // 'auto': defer to HA's locale.time_format ('12' | '24' | 'language' | 'system').
+  const hatf = locale?.time_format;
+  if (hatf === '12') return true;
+  if (hatf === '24') return false;
+  // 'language' / 'system' / undefined → probe like HA does: render 22:00 and
+  // check whether it comes out as "10" (i.e. an AM/PM locale).
+  try {
+    const testLang = hatf === 'language' ? locale?.language : undefined;
+    const test = new Date('January 1, 2023 22:00:00').toLocaleString(testLang);
+    return test.includes('10');
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Formats the day/month part for 'auto' date mode, mirroring HA's
+ * formatDateNumeric (src/common/datetime/format_date.ts): build a numeric
+ * Intl format, then reorder the parts per locale.date_format (DMY/MDY/YMD).
+ * Year is omitted to keep the compact footer format.
+ * @param {Date} arrival
+ * @param {object|null} locale - hass.locale ({ language, date_format })
+ * @returns {string}
+ */
+function formatAutoDate(arrival, locale) {
+  const df = locale?.date_format;
+  try {
+    // 'system' → undefined locale (browser default); otherwise the HA language.
+    const localeString = df === 'system' ? undefined : locale?.language;
+    const fmt = new Intl.DateTimeFormat(localeString, { day: 'numeric', month: 'numeric' });
+    if (df === 'DMY' || df === 'MDY' || df === 'YMD') {
+      const parts = fmt.formatToParts(arrival);
+      const literal = parts.find(p => p.type === 'literal')?.value || '/';
+      const day = parts.find(p => p.type === 'day')?.value;
+      const month = parts.find(p => p.type === 'month')?.value;
+      // No year here, so MDY and YMD both render month-first.
+      return df === 'DMY' ? `${day}${literal}${month}` : `${month}${literal}${day}`;
+    }
+    // 'language' / 'system' / undefined → trust the locale's own order.
+    return fmt.format(arrival);
+  } catch (e) {
+    const month = (arrival.getMonth() + 1).toString().padStart(2, '0');
+    const day = arrival.getDate().toString().padStart(2, '0');
+    return `${month}/${day}`;
+  }
+}
+
+/**
+ * Calculates and formats estimated time of arrival.
+ * @param {number|null} minutes - Minutes from now
+ * @param {object} [config] - Card config (date_format, time_format)
+ * @param {object|null} [locale] - hass.locale for 'auto' resolution
+ * @returns {string} Formatted date + time, or '--/-- --:--'
+ */
+function formatTimeOfArrival(minutes, config = {}, locale = null) {
   if (minutes === null || minutes < 0) return '--/-- --:--';
-  const now = new Date();
-  const arrival = new Date(now.getTime() + minutes * 60000);
+  const arrival = new Date(Date.now() + minutes * 60000);
+  const dateFormat = config.date_format || 'auto';
+  const timeFormat = config.time_format || 'auto';
+
+  // Date part
   const month = (arrival.getMonth() + 1).toString().padStart(2, '0');
   const day = arrival.getDate().toString().padStart(2, '0');
-  const hours = arrival.getHours().toString().padStart(2, '0');
-  const mins = arrival.getMinutes().toString().padStart(2, '0');
-  return `${month}/${day} ${hours}:${mins}`;
+  let datePart;
+  if (dateFormat === 'MM/DD') {
+    datePart = `${month}/${day}`;
+  } else if (dateFormat === 'DD/MM') {
+    datePart = `${day}/${month}`;
+  } else {
+    // 'auto': follow HA's locale.date_format (DMY/MDY/YMD/language/system).
+    datePart = formatAutoDate(arrival, locale);
+  }
+
+  // Time part
+  const hour12 = resolveHour12(timeFormat, locale);
+  let timePart;
+  if (hour12) {
+    let h = arrival.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const mins = arrival.getMinutes().toString().padStart(2, '0');
+    timePart = `${h.toString().padStart(2, '0')}:${mins} ${ampm}`;
+  } else {
+    const hours = arrival.getHours().toString().padStart(2, '0');
+    const mins = arrival.getMinutes().toString().padStart(2, '0');
+    timePart = `${hours}:${mins}`;
+  }
+
+  return `${datePart} ${timePart}`;
 }
 
 /**
@@ -696,6 +783,16 @@ const GENERAL_SCHEMA = [
     { value: 'none', label: 'No Title' },
   ] } } },
   { name: 'show_runtime', label: 'Display Runtime/Depletion Times', selector: { boolean: {} } },
+  { name: 'date_format', label: 'Date Format', selector: { select: { mode: 'dropdown', options: [
+    { value: 'auto', label: 'Auto (HA locale)' },
+    { value: 'MM/DD', label: 'MM/DD (US)' },
+    { value: 'DD/MM', label: 'DD/MM (EU/UK)' },
+  ] } } },
+  { name: 'time_format', label: 'Time Format', selector: { select: { mode: 'dropdown', options: [
+    { value: 'auto', label: 'Auto (HA locale)' },
+    { value: '24', label: '24-hour' },
+    { value: '12', label: '12-hour' },
+  ] } } },
   { name: 'show_rates', label: 'Display Power Gauge (Charge/Discharge Rates)', selector: { boolean: {} } },
   { name: 'show_rate_labels', label: 'Display Max Charge/Discharge Labels', selector: { boolean: {} } },
   { name: 'show_power_percent', label: 'Display Power Percentage', selector: { boolean: {} } },
@@ -980,6 +1077,14 @@ class UniversalBatteryCard extends LitElement {
     // header_style enum
     if (config.header_style !== undefined && !['full', 'title', 'none'].includes(config.header_style)) {
       throw new Error(`header_style must be 'full', 'title', or 'none' (got ${JSON.stringify(config.header_style)})`);
+    }
+
+    // date_format / time_format enums
+    if (config.date_format !== undefined && !['auto', 'MM/DD', 'DD/MM'].includes(config.date_format)) {
+      throw new Error(`date_format must be 'auto', 'MM/DD', or 'DD/MM' (got ${JSON.stringify(config.date_format)})`);
+    }
+    if (config.time_format !== undefined && !['auto', '24', '12'].includes(config.time_format)) {
+      throw new Error(`time_format must be 'auto', '24', or '12' (got ${JSON.stringify(config.time_format)})`);
     }
 
     // Entity IDs: must look like 'domain.entity_id' when provided.
@@ -1462,7 +1567,7 @@ class UniversalBatteryCard extends LitElement {
     let footerText = '';
     if (stats.status !== 'idle' && stats.timeToTarget !== null) {
       const durationFormatted = formatDuration(stats.timeToTarget);
-      const etaFormatted = formatTimeOfArrival(stats.timeToTarget);
+      const etaFormatted = formatTimeOfArrival(stats.timeToTarget, this._config, this.hass?.locale);
       if (stats.status === 'discharging') {
         footerText = `Runtime: ${durationFormatted}  |  Depletes At: ${etaFormatted}`;
       } else {
