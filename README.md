@@ -55,7 +55,7 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 
 | Option | Description |
 |--------|-------------|
-| `state_entity` | Custom state text (overrides auto-detected Charging/Discharging/Idle) |
+| `state_entity` | Custom state text (overrides auto-detected Charging/Discharging/Idle). For numeric/coded states, see [Mapping coded state entities](#mapping-coded-state-entities) |
 | `mode_entity` | Battery mode display (e.g., from input_select) |
 | `soc_energy_entity` | Current battery energy in Wh/kWh |
 | `capacity_entity` | Total battery capacity (or use fixed `capacity`) |
@@ -148,6 +148,50 @@ Note: "Very Low" color applies to any SOC below the "Low" threshold.
 enable_trickle_charge_filter: true
 trickle_charge_threshold: 25  # Watts
 ```
+
+### Mapping coded state entities
+
+Some inverters/batteries (e.g. Zendure) expose their mode as a number — `0`, `1`,
+`2` … — rather than text. The card's charge/discharge/idle **gauge is driven by
+the power entity**, so it always works correctly; only the optional `state_entity`
+label would show the raw number.
+
+The card is intentionally generic and doesn't ship vendor-specific code maps, since
+these differ between systems. To show readable text, create a
+[Template sensor](https://www.home-assistant.io/integrations/template/) that maps
+the codes and point `state_entity` at it.
+
+**Via the UI (no YAML):** go to **Settings → Devices & Services → Helpers →
+Create Helper → Template → Template a sensor**, then paste the mapping into the
+**State template** box:
+
+```jinja
+{% set m = {0: 'Idle', 1: 'Charging', 2: 'Discharging',
+            3: 'Pass-Through', 4: 'Charging from Grid'} %}
+{{ m.get(states('sensor.your_state_entity') | int, 'Unknown') }}
+```
+
+**Via YAML:**
+
+```yaml
+template:
+  - sensor:
+      - name: Battery Mode
+        state: >
+          {% set m = {0: 'Idle', 1: 'Charging', 2: 'Discharging',
+                      3: 'Pass-Through', 4: 'Charging from Grid'} %}
+          {{ m.get(states('sensor.your_state_entity') | int, 'Unknown') }}
+```
+
+Then point the card at the new sensor:
+
+```yaml
+state_entity: sensor.battery_mode
+```
+
+Adjust the mapping to match your device's documented states. See the
+[templating docs](https://www.home-assistant.io/docs/configuration/templating/)
+for more.
 
 ## Click Behavior
 
