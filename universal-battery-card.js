@@ -404,6 +404,15 @@ const cardStyles = css`
 
   ha-card {
     height: 100%;
+    min-height: 260px; /* floor for auto-height dashboards (masonry/sections
+      "auto" row) — a 1fr row only fills remaining space when the grid
+      container has a definite height. When an ancestor gives us height:
+      auto instead, the browser sizes the 1fr row off its own content,
+      which is --ubc-gauge-size — the exact value we just derived from
+      measuring this same height. That circularity collapses toward a
+      tiny self-consistent size once card width stops being the limiting
+      factor (#9). This floor keeps the collapse from going below a legible
+      size; it doesn't make the gauge scale with extra width in that mode. */
     display: grid;
     grid-template-rows: auto 1fr auto;
     grid-template-columns: 1fr;
