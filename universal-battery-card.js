@@ -7,6 +7,13 @@ const LitElement = Object.getPrototypeOf(customElements.get('ha-panel-lovelace')
 const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 
+// Some locked-firmware WebViews (e.g. embedded wall-panel browsers) either
+// lack conic-gradient entirely or paint it with visible banding/seam
+// artifacts. Feature-detect once at module load and fall back to a flat
+// ring background instead of a garbled gradient (#10).
+const SUPPORTS_CONIC_GRADIENT = typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+  && CSS.supports('background', 'conic-gradient(red, blue)');
+
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
 const VERSION = '2.6.0';
@@ -416,14 +423,24 @@ const cardStyles = css`
     z-index: 1; /* keep header on top when gauges encroach into its vertical band */
   }
 
-  /* Encroach mode: header and gauges share the top + middle rows.
-     Header pinned to top of the merged area; gauges centered behind. */
+  /* Encroach mode: gauges take the full body (header row collapsed to 0 and
+     folded into the gauges row) so they always get the entire flexible track's
+     height. The header is pulled out of grid flow entirely and overlaid on
+     top via absolute positioning, instead of co-spanning rows 1/3 with the
+     gauges — two grid items spanning the same auto+1fr rows left row sizing
+     ambiguous across browsers and could collapse the gauges down to nothing
+     with no way to recover on further resize (#9). */
+  :host(.gauges-encroach-header) ha-card {
+    grid-template-rows: 0 1fr auto;
+  }
   :host(.gauges-encroach-header) .header {
-    grid-row: 1 / 3;
-    align-self: start;
+    grid-row: 2;
+    position: absolute;
+    inset: 16px 16px auto 16px;
+    margin-bottom: 0;
   }
   :host(.gauges-encroach-header) .gauges-container {
-    grid-row: 1 / 3;
+    grid-row: 2;
   }
 
   .header-left {
@@ -1386,10 +1403,12 @@ class UniversalBatteryCard extends LitElement {
     const cyclesValue = getEntityValue(this.hass, config.cycles_entity);
     const healthValue = getEntityValue(this.hass, config.health_entity);
 
-    const temp = tempValue.available ? tempValue.value : null;
+    // Round to decimal_places — unrounded sensor states (e.g. 21.6666666666667)
+    // otherwise overflow the stats row and clip the card title.
+    const temp = tempValue.available ? Number(tempValue.value.toFixed(decimals)) : null;
     const tempUnit = tempValue.unit || '°C';
-    const cycles = cyclesValue.available ? cyclesValue.value : null;
-    const health = healthValue.available ? healthValue.value : null;
+    const cycles = cyclesValue.available ? Number(cyclesValue.value.toFixed(decimals)) : null;
+    const health = healthValue.available ? Number(healthValue.value.toFixed(decimals)) : null;
 
     const hasStats = temp !== null || cycles !== null || health !== null;
 
@@ -1425,6 +1444,11 @@ class UniversalBatteryCard extends LitElement {
    * @returns {string} CSS background value
    */
   _getGaugeBackground(value, color) {
+    if (!SUPPORTS_CONIC_GRADIENT) {
+      // WebView can't paint conic-gradient correctly (missing or garbled) —
+      // render a plain ring rather than a broken-looking gradient (#10).
+      return `var(--ubc-gauge-bg)`;
+    }
     // Full 360 degree circle, color starts at top and fills counter-clockwise
     const degrees = Math.min(100, Math.max(0, value)) * 3.6;
     const startAngle = 360 - degrees;
@@ -1439,6 +1463,9 @@ class UniversalBatteryCard extends LitElement {
    * @returns {string} CSS background value
    */
   _getPowerGaugeBackground(value, color, isCharging) {
+    if (!SUPPORTS_CONIC_GRADIENT) {
+      return `var(--ubc-gauge-bg)`;
+    }
     const degrees = Math.min(100, Math.max(0, value)) * 3.6;
     if (isCharging) {
       // Clockwise from top: color from 0 to degrees
