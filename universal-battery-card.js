@@ -1371,9 +1371,10 @@ class UniversalBatteryCard extends LitElement {
         targetPercent = cutoffPercent !== null ? cutoffPercent : 100;
         const targetEnergy = capacityWh * (targetPercent / 100);
         timeToTarget = calculateTimeToTarget(socEnergyWh, targetEnergy, power);
-      } else if (status === 'discharging' && reservePercent !== null) {
-        targetPercent = reservePercent;
-        const targetEnergy = capacityWh * (reservePercent / 100);
+      } else if (status === 'discharging') {
+        // Use reserve percentage if configured, otherwise 0%
+        targetPercent = reservePercent !== null ? reservePercent : 0;
+        const targetEnergy = capacityWh * (targetPercent / 100);
         timeToTarget = calculateTimeToTarget(socEnergyWh, targetEnergy, power);
       }
     }
