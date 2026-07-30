@@ -61,8 +61,10 @@ const DEFAULT_CONFIG = {
 // Gauge sizing
 const HARD_FLOOR_PX = 40;              // absolute minimum gauge diameter — below this gauges are unreadable
 const GAUGE_PADDING_PX = 20;           // .gauges-container has 10px top + 10px bottom
-const HEIGHT_MODE_TOLERANCE_PX = 2;    // slack when comparing a row track against its content,
-                                       // for sub-pixel layout and browser zoom rounding
+const HEIGHT_MODE_TOLERANCE_PX = 2;    // slack when comparing probe heights, for sub-pixel
+                                       // layout and browser zoom rounding
+const HEIGHT_PROBE_PX = 400;           // deliberately oversized gauge used to test whether the
+                                       // card's height follows its content
 const GAUGE_DEADBAND_PX = 4;           // ignore sub-deadband size changes; an exact-equality
                                        // guard can't stop a slow drift from crawling frame
                                        // after frame through the ResizeObserver
@@ -722,7 +724,8 @@ const cardStyles = css`
 
   /* Rate Labels under power gauge */
   .rate-labels {
-    display: flex;
+    /* Hidden by the sizing pass when the row is too short for the labels and the gauge both. */
+    display: var(--ubc-rate-label-display, flex);
     justify-content: space-between;
     width: 100%;
     margin-top: 8px;
@@ -1062,7 +1065,7 @@ class UniversalBatteryCard extends LitElement {
     // Bust the no-op cache so editor changes that don't alter output dimensions still re-evaluate.
     this._lastSizing = null;
     // A different header/footer changes the geometry the height probe was decided from.
-    this._contentDrivenHeight = undefined;
+    this._heightProbe = null;
     // Config-derived, not size-derived, so it belongs here rather than in the resize path.
     this.style.setProperty('--ubc-card-min-height', `${this._minCardHeight(this._layoutFlags())}px`);
     // Re-run sizing so options like power_gauge_scale apply live in the editor
@@ -1248,33 +1251,54 @@ class UniversalBatteryCard extends LitElement {
   // them. An imposed height doesn't move; a content-derived one does. The write and the read
   // happen in the same frame, so the probe size is never painted.
   //
-  // Decided once and cached; only the configured chrome can change the answer, and setConfig
-  // clears it.
+  // Probed against two sizes rather than one: the card's min-height clamps from below, so
+  // collapsing a card that is already small changes nothing and looks exactly like an imposed
+  // height. Comparing a collapsed layout against a deliberately oversized one is unambiguous
+  // regardless of the current size or the floor.
+  //
+  // Cached with the height it was decided at, and re-probed whenever that height moves — a
+  // single early sample can be taken mid-transition (an opening editor dialog, a view still
+  // animating) and would otherwise be trusted forever.
   _probeContentDrivenHeight(cardEl, boxHeight) {
-    if (this._contentDrivenHeight !== undefined) return this._contentDrivenHeight;
-    if (!cardEl || boxHeight <= 0) return false; // undecided — retry on the next pass
+    const cached = this._heightProbe;
+    if (cached && Math.abs(cached.boxHeight - boxHeight) <= HEIGHT_MODE_TOLERANCE_PX) {
+      return cached.contentDriven;
+    }
+    if (!cardEl || boxHeight <= 0) return cached?.contentDriven ?? false; // retry next pass
     const gauge = this.style.getPropertyValue('--ubc-gauge-size');
     const power = this.style.getPropertyValue('--ubc-power-gauge-size');
-    this.style.setProperty('--ubc-gauge-size', '0px');
-    this.style.setProperty('--ubc-power-gauge-size', '0px');
-    const collapsed = cardEl.offsetHeight; // forces layout at the probe size
+    const at = (px) => {
+      this.style.setProperty('--ubc-gauge-size', `${px}px`);
+      this.style.setProperty('--ubc-power-gauge-size', `${Math.round(px * 0.78)}px`);
+      return cardEl.offsetHeight; // forces layout at the probe size
+    };
+    const collapsed = at(0);
+    const expanded = at(HEIGHT_PROBE_PX);
     const restore = (prop, value) => {
       if (value) this.style.setProperty(prop, value);
       else this.style.removeProperty(prop);
     };
     restore('--ubc-gauge-size', gauge);
     restore('--ubc-power-gauge-size', power);
-    this._contentDrivenHeight = collapsed < boxHeight - HEIGHT_MODE_TOLERANCE_PX;
-    return this._contentDrivenHeight;
+    const contentDriven = expanded > collapsed + HEIGHT_MODE_TOLERANCE_PX;
+    this._heightProbe = { boxHeight, contentDriven };
+    return contentDriven;
   }
 
-  // Largest gauge diameter that fits a given gauges-row height. The main gauge column is the
-  // gauge itself; the power column is powerScale × that plus its rate-label block, so at small
-  // sizes the power column binds instead. Solved for both, smaller wins.
-  _heightCappedSize(rowSpace, rateBlock, flags) {
-    const forMain = rowSpace - GAUGE_PADDING_PX;
-    if (!rateBlock || !flags.showPowerGauge) return forMain;
-    return Math.min(forMain, (rowSpace - GAUGE_PADDING_PX - rateBlock) / flags.powerScale);
+  // Largest gauge diameter that fits a given gauges-row height. Only the main gauge column is
+  // considered: the power column is shorter but carries its rate labels below it, and when those
+  // don't fit the labels hide (see _rateLabelsFit) rather than shrinking the gauge to suit text.
+  _heightCappedSize(rowSpace) {
+    return rowSpace - GAUGE_PADDING_PX;
+  }
+
+  // Do the power gauge's rate labels fit under it at this size? Uses the last measured label
+  // height, since a hidden block measures 0 and would otherwise always look like it fits.
+  _rateLabelsFit(gaugeSize, rowSpace, rateBlock, flags) {
+    if (!flags.showPowerGauge) return true;
+    const block = rateBlock || this._lastRateBlock || 0;
+    if (!block) return true;
+    return gaugeSize * flags.powerScale + block <= rowSpace - GAUGE_PADDING_PX;
   }
 
   // Compute the auto gap between gauges given the current available width.
@@ -1314,6 +1338,7 @@ class UniversalBatteryCard extends LitElement {
       && last.gaugeGap === values.gaugeGap
       && last.labelDisplay === values.labelDisplay
       && last.statsDisplay === values.statsDisplay
+      && last.rateLabelDisplay === values.rateLabelDisplay
       && last.useEncroach === values.useEncroach) {
       return;
     }
@@ -1323,6 +1348,7 @@ class UniversalBatteryCard extends LitElement {
     this.style.setProperty('--ubc-gauge-gap', `${values.gaugeGap}px`);
     this.style.setProperty('--ubc-label-display', values.labelDisplay);
     this.style.setProperty('--ubc-stats-display', values.statsDisplay);
+    this.style.setProperty('--ubc-rate-label-display', values.rateLabelDisplay);
     this.classList.toggle('gauges-encroach-header', values.useEncroach);
   }
 
@@ -1362,12 +1388,9 @@ class UniversalBatteryCard extends LitElement {
     // width and let the card grow as tall as that needs. Height-derived sizing there would just
     // hand back the size we already wrote, freezing the gauge at whatever it started as.
     const contentDriven = this._probeContentDrivenHeight(cardEl, boxHeight);
-    const standardSize = contentDriven
-      ? widthCap
-      : Math.min(widthCap, this._heightCappedSize(standardArea, rateBlock, flags));
-    const encroachSize = contentDriven
-      ? widthCap
-      : Math.min(widthCap, this._heightCappedSize(encroachArea, rateBlock, flags));
+    const standardSize = contentDriven ? widthCap : Math.min(widthCap, this._heightCappedSize(standardArea));
+    const encroachSize = contentDriven ? widthCap : Math.min(widthCap, this._heightCappedSize(encroachArea));
+    if (rateBlock) this._lastRateBlock = rateBlock;
 
     // Engage encroach only when it grows the gauge meaningfully and is visually safe.
     let useEncroach = false;
@@ -1387,8 +1410,16 @@ class UniversalBatteryCard extends LitElement {
       || (flags.headerStyle !== 'none' && gaugeSize < LABELS_HIDE_BELOW_PX_WITH_HEADER);
     const labelDisplay = hideLabels ? 'none' : 'block';
     const statsDisplay = containerWidth < STATS_PANEL_HIDE_BELOW_PX ? 'none' : 'flex';
+    // Text under the power gauge yields before the gauges do — a card short enough that the rate
+    // labels don't fit is better off with a readable gauge than with the labels kept.
+    const rowSpace = useEncroach ? encroachArea : standardArea;
+    const rateLabelDisplay = contentDriven || this._rateLabelsFit(gaugeSize, rowSpace, rateBlock, flags)
+      ? 'flex'
+      : 'none';
 
-    this._applySizing({ gaugeSize, powerGaugeSize, gaugeGap, labelDisplay, statsDisplay, useEncroach });
+    this._applySizing({
+      gaugeSize, powerGaugeSize, gaugeGap, labelDisplay, statsDisplay, rateLabelDisplay, useEncroach,
+    });
   }
 
   getCardSize() {
