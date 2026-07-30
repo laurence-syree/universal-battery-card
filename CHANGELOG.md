@@ -3,7 +3,7 @@
 ## [v2.7.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.7.0)
 
 - Show the discharge runtime footer by default — the time-to-empty estimate now targets 0% when no reserve is configured, instead of being hidden entirely (thanks @Xovos - #11)
-- Fix gauges shrinking pass-by-pass on auto-height dashboards (masonry, Sections "auto" row). Card height there is a function of the gauge size, so any error in the space accounting compounded on every measure/resize cycle — and the accounting subtracted the gauge container's padding twice while missing the header's bottom margin, the footer's top margin, the card border, and the rate labels below the power gauge. Chrome is now measured as a single delta from the rendered card instead of summed from constants, so nothing can be left out (#9)
+- Fix gauges shrinking pass-by-pass on auto-height dashboards (masonry, Sections "auto" row). Card height there is a function of the gauge size, so any error in the space accounting compounded on every measure/resize cycle — and the accounting subtracted the gauge container's padding twice while missing the header's bottom margin, the footer's top margin, the card border, and the rate labels below the power gauge. Chrome is now measured as a single delta from the rendered card instead of summed from constants, so nothing can be left out (reported by @kmb36td - #9)
 - Size the gauge from the available width on auto-height dashboards, where the card's height follows its content and so can't tell the gauge anything about available space. Previously this only worked by accident — the accounting bug grew the gauge a few pixels per resize pass until it hit the width limit — so fixing the accounting alone would have left gauges stuck at their starting size. The card now reaches the same result in a single pass, and sizing changes below a few pixels are ignored so nothing can creep (#9)
 - Fix the encroach layout collapsing the gauge with no recovery on resize — the header is now overlaid via absolute positioning instead of co-spanning the same grid rows as the gauges, which left row sizing ambiguous across browsers (#9)
 - Stop the encroach header shifting 16px down and right as it engages; it was offset by the card padding on top of a grid area that already excluded it
@@ -11,7 +11,7 @@
 - Hide the "Max Charge" / "Max Discharge" rate labels automatically on cards too short to fit both them and a readable gauge, the same way the reserve/cutoff labels already hide. Previously the gauge was shrunk to make room for the text instead — on a narrow card with the labels wrapping to two lines that pinned it to the 40px minimum
 - Round temp/cycles/health to `decimal_places` in the stats panel; raw sensor floats were overflowing the row and clipping the card title (#9)
 - Name the discharge target in the footer when a reserve is set — reaching a 20% reserve isn't depletion — and suppress the arrival time when the duration exceeds the 99-hour display cap
-- Fall back to a flat gauge ring (no end caps) where `conic-gradient` isn't supported, instead of painting stray dots on an empty ring
+- Fall back to a flat gauge ring (no end caps) where `conic-gradient` isn't supported, instead of painting stray dots on an empty ring (prompted by @Explorer900's report in #10 — that card rendered correctly on the same device before, so the cause there is likely something else and the issue stays open)
 
 ## [v2.6.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.6.0)
 
