@@ -61,6 +61,8 @@ const DEFAULT_CONFIG = {
 // Gauge sizing
 const HARD_FLOOR_PX = 40;              // absolute minimum gauge diameter — below this gauges are unreadable
 const GAUGE_PADDING_PX = 20;           // .gauges-container has 10px top + 10px bottom
+const HEIGHT_MODE_TOLERANCE_PX = 2;    // slack when comparing a row track against its content,
+                                       // for sub-pixel layout and browser zoom rounding
 const GAUGE_DEADBAND_PX = 4;           // ignore sub-deadband size changes; an exact-equality
                                        // guard can't stop a slow drift from crawling frame
                                        // after frame through the ResizeObserver
@@ -1059,6 +1061,8 @@ class UniversalBatteryCard extends LitElement {
     this._config = { ...DEFAULT_CONFIG, ...config };
     // Bust the no-op cache so editor changes that don't alter output dimensions still re-evaluate.
     this._lastSizing = null;
+    // A different header/footer changes the geometry the height probe was decided from.
+    this._contentDrivenHeight = undefined;
     // Config-derived, not size-derived, so it belongs here rather than in the resize path.
     this.style.setProperty('--ubc-card-min-height', `${this._minCardHeight(this._layoutFlags())}px`);
     // Re-run sizing so options like power_gauge_scale apply live in the editor
@@ -1223,7 +1227,45 @@ class UniversalBatteryCard extends LitElement {
     // box. It equals the host's height in every normal case, but min-height can inflate ha-card
     // past a host that a wrapper gave a short definite height — mixing the two there would size
     // the gauge for a slot the card was never going to honour.
-    return { headerEl, headerVertical, chromeExcludingHeader, rateBlock, cardHeight: measurable ? cardEl.offsetHeight : 0 };
+    return {
+      headerEl,
+      cardEl,
+      headerVertical,
+      chromeExcludingHeader,
+      rateBlock,
+      cardHeight: measurable ? cardEl.offsetHeight : 0,
+    };
+  }
+
+  // Is the card's height coming from its own content rather than from an ancestor? On masonry
+  // and Sections "auto" rows it is, which makes the measured row height a function of the gauge
+  // size we last wrote — self-referential, so it says nothing about available space and the
+  // gauge has to be sized from width instead.
+  //
+  // Geometry alone can't answer this: a definite-height card sized to fit its row has a track
+  // exactly equal to its content, which is indistinguishable from a content-sized track. So
+  // probe instead — collapse the gauges to zero and see whether the card's height drops with
+  // them. An imposed height doesn't move; a content-derived one does. The write and the read
+  // happen in the same frame, so the probe size is never painted.
+  //
+  // Decided once and cached; only the configured chrome can change the answer, and setConfig
+  // clears it.
+  _probeContentDrivenHeight(cardEl, boxHeight) {
+    if (this._contentDrivenHeight !== undefined) return this._contentDrivenHeight;
+    if (!cardEl || boxHeight <= 0) return false; // undecided — retry on the next pass
+    const gauge = this.style.getPropertyValue('--ubc-gauge-size');
+    const power = this.style.getPropertyValue('--ubc-power-gauge-size');
+    this.style.setProperty('--ubc-gauge-size', '0px');
+    this.style.setProperty('--ubc-power-gauge-size', '0px');
+    const collapsed = cardEl.offsetHeight; // forces layout at the probe size
+    const restore = (prop, value) => {
+      if (value) this.style.setProperty(prop, value);
+      else this.style.removeProperty(prop);
+    };
+    restore('--ubc-gauge-size', gauge);
+    restore('--ubc-power-gauge-size', power);
+    this._contentDrivenHeight = collapsed < boxHeight - HEIGHT_MODE_TOLERANCE_PX;
+    return this._contentDrivenHeight;
   }
 
   // Largest gauge diameter that fits a given gauges-row height. The main gauge column is the
@@ -1289,7 +1331,9 @@ class UniversalBatteryCard extends LitElement {
     if (containerWidth <= 0 || containerHeight <= 0) return;
 
     const flags = this._layoutFlags();
-    const { headerEl, headerVertical, chromeExcludingHeader, rateBlock, cardHeight } = this._measureChrome(flags);
+    const {
+      headerEl, cardEl, headerVertical, chromeExcludingHeader, rateBlock, cardHeight,
+    } = this._measureChrome(flags);
     // Re-assert the floor: unlike the other custom properties this one is otherwise written
     // only in setConfig, so a wrapper overwriting the host's style attribute would drop it.
     // Compared first — the value only changes in setConfig, and this runs on every state
@@ -1301,11 +1345,8 @@ class UniversalBatteryCard extends LitElement {
 
     //   standardArea → gauges row sitting between header and footer
     //   encroachArea → gauges row also taking the collapsed header row
-    // On auto-height dashboards the card's height is itself a function of the gauge size, so
-    // this settles at whatever size it started from rather than tracking column width — stable
-    // and legible, but deliberately not width-responsive in that mode. min-height bounds the
-    // start. boxHeight is ha-card's own height to match chromeExcludingHeader's frame; it
-    // equals containerHeight except where min-height inflated the card past a short host.
+    // boxHeight is ha-card's own height, to match chromeExcludingHeader's frame; it equals
+    // containerHeight except where min-height inflated the card past a short definite host.
     const boxHeight = cardHeight > 0 ? cardHeight : containerHeight;
     const encroachArea = boxHeight - chromeExcludingHeader;
     const standardArea = encroachArea - headerVertical;
@@ -1316,8 +1357,17 @@ class UniversalBatteryCard extends LitElement {
     const widthCap = flags.showPowerGauge
       ? (availableWidth - gaugeGap) / (1 + flags.powerScale)
       : availableWidth;
-    const standardSize = Math.min(widthCap, this._heightCappedSize(standardArea, rateBlock, flags));
-    const encroachSize = Math.min(widthCap, this._heightCappedSize(encroachArea, rateBlock, flags));
+
+    // Where the card's height follows its content, height is no constraint at all: fill the
+    // width and let the card grow as tall as that needs. Height-derived sizing there would just
+    // hand back the size we already wrote, freezing the gauge at whatever it started as.
+    const contentDriven = this._probeContentDrivenHeight(cardEl, boxHeight);
+    const standardSize = contentDriven
+      ? widthCap
+      : Math.min(widthCap, this._heightCappedSize(standardArea, rateBlock, flags));
+    const encroachSize = contentDriven
+      ? widthCap
+      : Math.min(widthCap, this._heightCappedSize(encroachArea, rateBlock, flags));
 
     // Engage encroach only when it grows the gauge meaningfully and is visually safe.
     let useEncroach = false;
