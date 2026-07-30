@@ -16,7 +16,7 @@ const SUPPORTS_CONIC_GRADIENT = typeof CSS !== 'undefined' && typeof CSS.support
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.6.0';
+const VERSION = '2.7.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -61,13 +61,21 @@ const DEFAULT_CONFIG = {
 // Gauge sizing
 const HARD_FLOOR_PX = 40;              // absolute minimum gauge diameter — below this gauges are unreadable
 const GAUGE_PADDING_PX = 20;           // .gauges-container has 10px top + 10px bottom
+const GAUGE_DEADBAND_PX = 4;           // ignore sub-deadband size changes; an exact-equality
+                                       // guard can't stop a slow drift from crawling frame
+                                       // after frame through the ResizeObserver
 
-// Card chrome
+// Card chrome. The fallbacks are pre-paint estimates only — once rendered, chrome is measured
+// as a single delta (see _measureChrome), so these just need to be close.
 const CARD_PADDING_X = 32;             // ha-card 16px left + 16px right
 const CARD_PADDING_Y = 32;             // ha-card 16px top + 16px bottom
-const HEADER_FALLBACK_FULL = 96;       // pre-render estimate for full header
+const CARD_BORDER_Y = 2;               // ha-card border-width defaults to 1px top + bottom
+const HEADER_FALLBACK_FULL = 68;       // title + state row + capacity row at default type scale
 const HEADER_FALLBACK_TITLE = 30;      // pre-render estimate for title-only header
-const FOOTER_FALLBACK = 48;            // pre-render estimate for runtime footer
+const FOOTER_FALLBACK = 30;            // one line + 10px padding-top + 1px border-top
+const HEADER_MARGIN_PX = 16;           // .header margin-bottom — sits outside offsetHeight
+const FOOTER_MARGIN_PX = 8;            // .footer margin-top — sits outside offsetHeight
+const RATE_LABELS_MARGIN_PX = 8;       // .rate-labels margin-top — in flow below the power gauge
 
 // Gauge gap heuristic: ramps from MIN at narrow widths to MAX at wide widths.
 // `(availableWidth - WIDE) * SLOPE` is the ramp expression.
@@ -189,17 +197,22 @@ function formatPower(watts, decimals = 0) {
   return { value: Math.round(watts).toString(), unit: 'W' };
 }
 
+// Durations longer than this collapse to a sentinel rather than a misleading number; callers
+// compare against DURATION_OVERFLOW, so the two must stay together.
+const DURATION_CAP_HOURS = 99;
+const DURATION_OVERFLOW = '99:59:59+';
+
 /**
  * Formats minutes as HH:MM:SS duration string
  * @param {number|null} minutes - Duration in minutes
- * @returns {string} Formatted duration or '--:--:--'
+ * @returns {string} Formatted duration, '--:--:--', or DURATION_OVERFLOW past the cap
  */
 function formatDuration(minutes) {
   if (minutes === null || minutes < 0) return '--:--:--';
   const hours = Math.floor(minutes / 60);
   const mins = Math.floor(minutes % 60);
   const secs = Math.floor((minutes * 60) % 60);
-  if (hours > 99) return '99:59:59+';
+  if (hours > DURATION_CAP_HOURS) return DURATION_OVERFLOW;
   return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
@@ -404,20 +417,18 @@ const cardStyles = css`
 
   ha-card {
     height: 100%;
-    min-height: 260px; /* floor for auto-height dashboards (masonry/sections
-      "auto" row) — a 1fr row only fills remaining space when the grid
-      container has a definite height. When an ancestor gives us height:
-      auto instead, the browser sizes the 1fr row off its own content,
-      which is --ubc-gauge-size — the exact value we just derived from
-      measuring this same height. That circularity collapses toward a
-      tiny self-consistent size once card width stops being the limiting
-      factor (#9). This floor keeps the collapse from going below a legible
-      size; it doesn't make the gauge scale with extra width in that mode. */
+    /* Safety net for auto-height dashboards (masonry, sections "auto" row), where the 1fr row
+       has no definite height to fill and sizes itself off its own content instead. Set from
+       _minCardHeight(), the same value behind the min_rows we report to HA, so the card can
+       never overflow the smallest cell it says it accepts. The literal is the pre-JS
+       first-paint value only. */
+    min-height: var(--ubc-card-min-height, 210px);
     display: grid;
     grid-template-rows: auto 1fr auto;
     grid-template-columns: 1fr;
     box-sizing: border-box;
     padding: 16px;
+    position: relative; /* containing block for the encroach-mode header overlay */
   }
 
   /* Header Section */
@@ -445,7 +456,9 @@ const cardStyles = css`
   :host(.gauges-encroach-header) .header {
     grid-row: 2;
     position: absolute;
-    inset: 16px 16px auto 16px;
+    /* The row-2 grid area is the containing block and its edges are already inside
+       ha-card's padding — offsetting by the padding again would double-count it. */
+    inset: 0 0 auto 0;
     margin-bottom: 0;
   }
   :host(.gauges-encroach-header) .gauges-container {
@@ -1046,6 +1059,8 @@ class UniversalBatteryCard extends LitElement {
     this._config = { ...DEFAULT_CONFIG, ...config };
     // Bust the no-op cache so editor changes that don't alter output dimensions still re-evaluate.
     this._lastSizing = null;
+    // Config-derived, not size-derived, so it belongs here rather than in the resize path.
+    this.style.setProperty('--ubc-card-min-height', `${this._minCardHeight(this._layoutFlags())}px`);
     // Re-run sizing so options like power_gauge_scale apply live in the editor
     if (this.isConnected && this.clientWidth > 0) {
       this._updateGaugeSize(this.clientWidth, this.clientHeight);
@@ -1166,16 +1181,58 @@ class UniversalBatteryCard extends LitElement {
     return { headerPx, footerPx };
   }
 
-  // Measure rendered chrome where possible; fall back to estimates on first paint.
+  // Everything the card spends vertically that isn't the gauges row, from estimates alone.
+  // Used pre-paint and by the HA layout APIs, which are called before we can measure.
+  _estimatedChromeVertical(flags) {
+    const { headerPx, footerPx } = this._estimateChrome(flags);
+    return CARD_PADDING_Y + CARD_BORDER_Y
+      + (headerPx ? headerPx + HEADER_MARGIN_PX : 0)
+      + (footerPx ? footerPx + FOOTER_MARGIN_PX : 0);
+  }
+
+  // Config-derived minimum card height. Single source of truth for the CSS floor and the
+  // min_rows we advertise to HA — if those two disagree the card overflows its own cell.
+  _minCardHeight(flags) {
+    return this._estimatedChromeVertical(flags) + GAUGE_PADDING_PX + HARD_FLOOR_PX;
+  }
+
+  // Chrome is measured as ONE delta — card box minus gauges row — rather than summed from
+  // parts. Padding, borders, header, footer and their margins are then included by
+  // construction, including anything added later; summing parts has silently missed
+  // contributors twice, and in auto-height mode (where card height is a function of gauge
+  // size) any omission becomes per-pass drift instead of a one-off error.
   _measureChrome(flags) {
-    const fallback = this._estimateChrome(flags);
     const headerEl = this.renderRoot?.querySelector?.('.header');
-    const footerEl = this.renderRoot?.querySelector?.('.footer');
-    return {
-      headerEl,
-      headerHeight: headerEl?.offsetHeight ?? fallback.headerPx,
-      footerHeight: footerEl?.offsetHeight ?? fallback.footerPx,
-    };
+    const cardEl = this.renderRoot?.querySelector?.('ha-card');
+    const gaugesEl = this.renderRoot?.querySelector?.('.gauges-container');
+    const rateLabelsEl = this.renderRoot?.querySelector?.('.rate-labels');
+
+    const headerVertical = headerEl?.offsetHeight ? headerEl.offsetHeight + HEADER_MARGIN_PX : 0;
+    // .rate-labels sits in flow under the power gauge, so that column is taller than its
+    // gauge and can be the one that bounds the row.
+    const rateBlock = rateLabelsEl?.offsetHeight ? rateLabelsEl.offsetHeight + RATE_LABELS_MARGIN_PX : 0;
+
+    const measurable = cardEl?.offsetHeight > 0 && gaugesEl?.offsetHeight > 0;
+    // While encroaching the header is out of flow, so the delta already excludes it.
+    const chromeExcludingHeader = measurable
+      ? cardEl.offsetHeight - gaugesEl.offsetHeight
+        - (this.classList.contains('gauges-encroach-header') ? 0 : headerVertical)
+      : this._estimatedChromeVertical(flags) - headerVertical;
+
+    // The chrome delta describes ha-card's box, so the caller has to subtract it from that same
+    // box. It equals the host's height in every normal case, but min-height can inflate ha-card
+    // past a host that a wrapper gave a short definite height — mixing the two there would size
+    // the gauge for a slot the card was never going to honour.
+    return { headerEl, headerVertical, chromeExcludingHeader, rateBlock, cardHeight: measurable ? cardEl.offsetHeight : 0 };
+  }
+
+  // Largest gauge diameter that fits a given gauges-row height. The main gauge column is the
+  // gauge itself; the power column is powerScale × that plus its rate-label block, so at small
+  // sizes the power column binds instead. Solved for both, smaller wins.
+  _heightCappedSize(rowSpace, rateBlock, flags) {
+    const forMain = rowSpace - GAUGE_PADDING_PX;
+    if (!rateBlock || !flags.showPowerGauge) return forMain;
+    return Math.min(forMain, (rowSpace - GAUGE_PADDING_PX - rateBlock) / flags.powerScale);
   }
 
   // Compute the auto gap between gauges given the current available width.
@@ -1206,9 +1263,12 @@ class UniversalBatteryCard extends LitElement {
   // unchanged frames don't trigger style recalculation (and don't risk RO loops).
   _applySizing(values) {
     const last = this._lastSizing;
+    // Deadband, not equality: a few px is invisible, but a residual per-pass drift compared
+    // only for equality would crawl the card frame after frame through the ResizeObserver.
+    // Comparing against the last *applied* values is what stops the crawl accumulating.
     if (last
-      && last.gaugeSize === values.gaugeSize
-      && last.powerGaugeSize === values.powerGaugeSize
+      && Math.abs(last.gaugeSize - values.gaugeSize) < GAUGE_DEADBAND_PX
+      && Math.abs(last.powerGaugeSize - values.powerGaugeSize) < GAUGE_DEADBAND_PX
       && last.gaugeGap === values.gaugeGap
       && last.labelDisplay === values.labelDisplay
       && last.statsDisplay === values.statsDisplay
@@ -1229,14 +1289,26 @@ class UniversalBatteryCard extends LitElement {
     if (containerWidth <= 0 || containerHeight <= 0) return;
 
     const flags = this._layoutFlags();
-    const { headerEl, headerHeight, footerHeight } = this._measureChrome(flags);
+    const { headerEl, headerVertical, chromeExcludingHeader, rateBlock, cardHeight } = this._measureChrome(flags);
+    // Re-assert the floor: unlike the other custom properties this one is otherwise written
+    // only in setConfig, so a wrapper overwriting the host's style attribute would drop it.
+    // Compared first — the value only changes in setConfig, and this runs on every state
+    // change, where a redundant write would invalidate style for the whole shadow subtree.
+    const floor = `${this._minCardHeight(flags)}px`;
+    if (this.style.getPropertyValue('--ubc-card-min-height') !== floor) {
+      this.style.setProperty('--ubc-card-min-height', floor);
+    }
 
-    // Vertical space accounting:
-    //   standardHeight  → gauges sit between header and footer
-    //   encroachHeight  → gauges allowed to extend into the header row
-    const fixedVertical = footerHeight + CARD_PADDING_Y + GAUGE_PADDING_PX;
-    const standardHeight = containerHeight - headerHeight - fixedVertical;
-    const encroachHeight = containerHeight - fixedVertical;
+    //   standardArea → gauges row sitting between header and footer
+    //   encroachArea → gauges row also taking the collapsed header row
+    // On auto-height dashboards the card's height is itself a function of the gauge size, so
+    // this settles at whatever size it started from rather than tracking column width — stable
+    // and legible, but deliberately not width-responsive in that mode. min-height bounds the
+    // start. boxHeight is ha-card's own height to match chromeExcludingHeader's frame; it
+    // equals containerHeight except where min-height inflated the card past a short host.
+    const boxHeight = cardHeight > 0 ? cardHeight : containerHeight;
+    const encroachArea = boxHeight - chromeExcludingHeader;
+    const standardArea = encroachArea - headerVertical;
 
     const availableWidth = containerWidth - CARD_PADDING_X;
     let gaugeGap = this._computeGaugeGap(availableWidth, flags);
@@ -1244,8 +1316,8 @@ class UniversalBatteryCard extends LitElement {
     const widthCap = flags.showPowerGauge
       ? (availableWidth - gaugeGap) / (1 + flags.powerScale)
       : availableWidth;
-    const standardSize = Math.min(widthCap, standardHeight - GAUGE_PADDING_PX);
-    const encroachSize = Math.min(widthCap, encroachHeight - GAUGE_PADDING_PX);
+    const standardSize = Math.min(widthCap, this._heightCappedSize(standardArea, rateBlock, flags));
+    const encroachSize = Math.min(widthCap, this._heightCappedSize(encroachArea, rateBlock, flags));
 
     // Engage encroach only when it grows the gauge meaningfully and is visually safe.
     let useEncroach = false;
@@ -1281,14 +1353,18 @@ class UniversalBatteryCard extends LitElement {
   }
 
   getGridOptions() {
-    // Compute floors from chrome estimates + a HARD_FLOOR gauge; HA decides ceilings.
+    // Floors come from the same _minCardHeight as the CSS min-height — if the two disagree the
+    // card overflows the smallest cell we told HA was legal. HA decides the ceilings.
     const flags = this._layoutFlags();
-    const { headerPx, footerPx } = this._estimateChrome(flags);
     const cellRow = SECTION_ROW_PX + SECTION_GAP_PX;
     const cellCol = SECTION_COL_PX + SECTION_GAP_PX;
 
-    const minHeightPx = headerPx + footerPx + CARD_PADDING_Y + GAUGE_PADDING_PX + HARD_FLOOR_PX;
-    const minRows = Math.max(2, Math.ceil((minHeightPx + SECTION_GAP_PX) / cellRow));
+    // The +2 asks for a cell at least 2px taller than the floor rather than exactly equal to
+    // it, so SECTION_ROW_PX / SECTION_GAP_PX drifting from HA's real row metrics can't turn
+    // into an overflow. It must be added, not subtracted: ceil() only guarantees
+    // cell >= floor + SECTION_GAP_PX - 8, so subtracting here would *permit* a 2px overflow
+    // at any floor where floor + 6 is an exact multiple of the row pitch.
+    const minRows = Math.max(2, Math.ceil((this._minCardHeight(flags) + SECTION_GAP_PX + 2) / cellRow));
 
     const minGaugesPx = flags.showPowerGauge
       ? HARD_FLOOR_PX * (1 + flags.powerScale) + GAUGE_GAP_MIN
@@ -1604,9 +1680,18 @@ class UniversalBatteryCard extends LitElement {
     let footerText = '';
     if (stats.status !== 'idle' && stats.timeToTarget !== null) {
       const durationFormatted = formatDuration(stats.timeToTarget);
-      const etaFormatted = formatTimeOfArrival(stats.timeToTarget, this._config, this.hass?.locale);
+      // formatDuration caps at 99h; formatTimeOfArrival doesn't and omits the year, so a
+      // trickle charge/drain would otherwise print a bare date months away.
+      const etaFormatted = durationFormatted === DURATION_OVERFLOW
+        ? '--'
+        : formatTimeOfArrival(stats.timeToTarget, this._config, this.hass?.locale);
       if (stats.status === 'discharging') {
-        footerText = `Runtime: ${durationFormatted}  |  Depletes At: ${etaFormatted}`;
+        // A non-zero reserve target isn't depletion — name the percentage instead. Rounded
+        // before the test so the branch and the label it prints can't disagree.
+        const targetLabel = Math.round(stats.targetPercent) > 0
+          ? `${Math.round(stats.targetPercent)}% At`
+          : 'Depletes At';
+        footerText = `Runtime: ${durationFormatted}  |  ${targetLabel}: ${etaFormatted}`;
       } else {
         const targetLabel = stats.cutoffPercent !== null ? `${Math.round(stats.cutoffPercent)}%` : 'Full';
         footerText = `Time to ${targetLabel}: ${durationFormatted}  |  ${targetLabel} At: ${etaFormatted}`;
@@ -1654,8 +1739,9 @@ class UniversalBatteryCard extends LitElement {
           <!-- Main SOC Gauge -->
           <div class="gauge-wrapper main-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.soc_entity)}>
             <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
-              <!-- Rounded end caps -->
-              ${stats.socPercent > 0 ? html`
+              <!-- Rounded end caps (skipped on the flat-ring fallback — without the
+                   gradient they'd read as stray dots on an empty ring) -->
+              ${SUPPORTS_CONIC_GRADIENT && stats.socPercent > 0 ? html`
                 <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
                 <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
               ` : ''}
@@ -1692,7 +1778,7 @@ class UniversalBatteryCard extends LitElement {
             <div class="gauge-wrapper power-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.power_entity)}>
               <div class="gauge power-gauge" style="background: ${powerGaugeBackground}; --ring-thickness: ${thickness}%">
                 <!-- Rounded end caps -->
-                ${stats.powerPercent > 0 ? html`
+                ${SUPPORTS_CONIC_GRADIENT && stats.powerPercent > 0 ? html`
                   <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.startY}%; left: 50%;"></div>
                   <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.y}%; left: ${powerCapPos.x}%;"></div>
                 ` : ''}
@@ -1796,7 +1882,7 @@ class UniversalBatteryCard extends LitElement {
         <div class="gauges-container">
           <div class="gauge-wrapper main-gauge-wrapper">
             <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
-              ${socPercent > 0 ? html`
+              ${SUPPORTS_CONIC_GRADIENT && socPercent > 0 ? html`
                 <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
                 <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
               ` : ''}

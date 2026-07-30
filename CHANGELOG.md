@@ -1,5 +1,17 @@
 # Changelog
 
+## [v2.7.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.7.0)
+
+- Show the discharge runtime footer by default — the time-to-empty estimate now targets 0% when no reserve is configured, instead of being hidden entirely (thanks @Xovos - #11)
+- Fix gauges shrinking pass-by-pass on auto-height dashboards (masonry, Sections "auto" row). Card height there is a function of the gauge size, so any error in the space accounting compounded on every measure/resize cycle — and the accounting subtracted the gauge container's padding twice while missing the header's bottom margin, the footer's top margin, the card border, and the rate labels below the power gauge. Chrome is now measured as a single delta from the rendered card instead of summed from constants, so nothing can be left out (#9)
+- Hold a steady gauge size on those same auto-height dashboards instead of creeping: sizing changes below a few pixels are ignored, so a residual drift can't crawl frame after frame. Note the gauge holds a stable size there rather than growing with column width
+- Fix the encroach layout collapsing the gauge with no recovery on resize — the header is now overlaid via absolute positioning instead of co-spanning the same grid rows as the gauges, which left row sizing ambiguous across browsers (#9)
+- Stop the encroach header shifting 16px down and right as it engages; it was offset by the card padding on top of a grid area that already excluded it
+- Derive the card's `min-height` from the configured header/footer instead of a fixed 260px, and report `min_rows` to Home Assistant from that same number — the two could disagree, letting the card overflow the smallest cell its own resize handles allowed. Sections layouts are unaffected: no configuration asks for more rows than before, and cards with a hidden header or footer may now be sized shorter than they could be previously
+- Round temp/cycles/health to `decimal_places` in the stats panel; raw sensor floats were overflowing the row and clipping the card title (#9)
+- Name the discharge target in the footer when a reserve is set — reaching a 20% reserve isn't depletion — and suppress the arrival time when the duration exceeds the 99-hour display cap
+- Fall back to a flat gauge ring (no end caps) where `conic-gradient` isn't supported, instead of painting stray dots on an empty ring
+
 ## [v2.6.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.6.0)
 
 - Appear in the Home Assistant 2026.6 card picker (Community section) when a battery state-of-charge entity is selected, pre-filling it as `soc_entity` (`getEntitySuggestion`)

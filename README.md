@@ -59,7 +59,7 @@ A generic Home Assistant Lovelace card for displaying battery information from *
 | `mode_entity` | Battery mode display (e.g., from input_select) |
 | `soc_energy_entity` | Current battery energy in Wh/kWh |
 | `capacity_entity` | Total battery capacity (or use fixed `capacity`) |
-| `reserve_entity` | Battery reserve percentage (or use fixed `reserve`) |
+| `reserve_entity` | Battery reserve percentage (or use fixed `reserve`). Also used as the discharge target for the runtime estimate |
 | `charge_rate_entity` | Max charge rate (or use fixed `charge_rate`) |
 | `discharge_rate_entity` | Max discharge rate (or use fixed `discharge_rate`) |
 | `cutoff_entity` | Max charge cutoff percentage (or use fixed `cutoff`) |
@@ -74,7 +74,7 @@ Instead of entities, you can set fixed values:
 | Option | Description |
 |--------|-------------|
 | `capacity` | Fixed capacity in kWh |
-| `reserve` | Fixed reserve percentage |
+| `reserve` | Fixed reserve percentage. Also used as the discharge target for the runtime estimate |
 | `charge_rate` | Fixed max charge rate in W |
 | `discharge_rate` | Fixed max discharge rate in W |
 | `cutoff` | Fixed max charge cutoff percentage |
@@ -84,7 +84,7 @@ Instead of entities, you can set fixed values:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `header_style` | `full` | Header display: `full`, `title`, or `none` |
-| `show_runtime` | `true` | Show time estimates in footer |
+| `show_runtime` | `true` | Show time estimates in footer. Charging targets `cutoff` (or 100%); discharging targets `reserve` (or 0%) |
 | `date_format` | `auto` | Footer date format: `auto` (Home Assistant locale), `MM/DD`, or `DD/MM` |
 | `time_format` | `auto` | Footer time format: `auto` (Home Assistant locale), `24`, or `12` |
 | `show_rates` | `true` | Show power gauge (requires charge/discharge rates) |
