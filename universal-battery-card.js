@@ -7,16 +7,9 @@ const LitElement = Object.getPrototypeOf(customElements.get('ha-panel-lovelace')
 const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 
-// Some locked-firmware WebViews (e.g. embedded wall-panel browsers) either
-// lack conic-gradient entirely or paint it with visible banding/seam
-// artifacts. Feature-detect once at module load and fall back to a flat
-// ring background instead of a garbled gradient (#10).
-const SUPPORTS_CONIC_GRADIENT = typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
-  && CSS.supports('background', 'conic-gradient(red, blue)');
-
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.7.1';
+const VERSION = '2.8.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -591,22 +584,23 @@ const cardStyles = css`
     justify-content: center;
   }
 
-  .gauge::before {
-    content: '';
+  /* Ring is an SVG arc rather than a conic-gradient background — see _renderRing (#10).
+     Absolutely positioned so it doesn't disturb the flex centring of .gauge-center. */
+  .gauge-ring {
     position: absolute;
-    inset: var(--ring-thickness, 15%);
-    border-radius: 50%;
-    background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
-    z-index: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
   }
 
-  .gauge-cap {
-    position: absolute;
-    width: var(--ring-thickness, 15%);
-    height: var(--ring-thickness, 15%);
-    border-radius: 50%;
-    z-index: 2;
-    transform: translate(-50%, -50%);
+  .gauge-ring circle {
+    fill: none;
+  }
+
+  .gauge-ring .ring-track {
+    stroke: var(--ubc-gauge-bg);
   }
 
   .gauge-center {
@@ -1613,43 +1607,45 @@ class UniversalBatteryCard extends LitElement {
   }
 
   /**
-   * Generates conic-gradient background for gauge
+   * Renders a gauge ring as an SVG arc.
+   *
+   * Replaces the previous conic-gradient background. That gradient only ever had two hard
+   * stops — a solid arc on a solid track — so a stroked circle reproduces it exactly rather
+   * than approximating it, and it renders on locked-firmware WebViews that report
+   * conic-gradient support but paint nothing (#10). `stroke-linecap: round` also replaces the
+   * two absolutely-positioned end-cap dots, which were sized and placed to imitate it.
+   *
    * @param {number} value - Percentage (0-100)
-   * @param {string} color - CSS color for filled portion
-   * @returns {string} CSS background value
+   * @param {string} color - CSS color for the filled arc
+   * @param {number} thickness - Ring thickness as a percentage of the gauge size
+   * @param {boolean} [clockwise=false] - Sweep direction from 12 o'clock
+   * @returns {unknown} Lit template
    */
-  _getGaugeBackground(value, color) {
-    if (!SUPPORTS_CONIC_GRADIENT) {
-      // WebView can't paint conic-gradient correctly (missing or garbled) —
-      // render a plain ring rather than a broken-looking gradient (#10).
-      return `var(--ubc-gauge-bg)`;
-    }
-    // Full 360 degree circle, color starts at top and fills counter-clockwise
-    const degrees = Math.min(100, Math.max(0, value)) * 3.6;
-    const startAngle = 360 - degrees;
-    return `conic-gradient(from 0deg, var(--ubc-gauge-bg) 0deg ${startAngle}deg, ${color} ${startAngle}deg 360deg)`;
-  }
+  _renderRing(value, color, thickness, clockwise = false) {
+    const percent = Math.min(100, Math.max(0, value));
+    const radius = 50 - (thickness / 2);
+    const circumference = 2 * Math.PI * radius;
+    const arc = circumference * (percent / 100);
 
-  /**
-   * Generates conic-gradient background for power gauge with direction support
-   * @param {number} value - Percentage (0-100)
-   * @param {string} color - CSS color for filled portion
-   * @param {boolean} isCharging - If true, fills clockwise; if false, fills counter-clockwise
-   * @returns {string} CSS background value
-   */
-  _getPowerGaugeBackground(value, color, isCharging) {
-    if (!SUPPORTS_CONIC_GRADIENT) {
-      return `var(--ubc-gauge-bg)`;
-    }
-    const degrees = Math.min(100, Math.max(0, value)) * 3.6;
-    if (isCharging) {
-      // Clockwise from top: color from 0 to degrees
-      return `conic-gradient(from 0deg, ${color} 0deg ${degrees}deg, var(--ubc-gauge-bg) ${degrees}deg 360deg)`;
-    } else {
-      // Counter-clockwise from top: color from (360-degrees) to 360
-      const startAngle = 360 - degrees;
-      return `conic-gradient(from 0deg, var(--ubc-gauge-bg) 0deg ${startAngle}deg, ${color} ${startAngle}deg 360deg)`;
-    }
+    // rotate(-90) starts the sweep at 12 o'clock going clockwise; mirroring about x=50
+    // reverses it to counter-clockwise while leaving the start point on the mirror axis.
+    const transform = clockwise
+      ? 'rotate(-90 50 50)'
+      : 'translate(100 0) scale(-1 1) rotate(-90 50 50)';
+
+    // Round caps overhang the arc by half the stroke, so at 0% they'd render a dot on an
+    // otherwise empty ring — the exact artifact the old cap divs were guarded against.
+    const linecap = percent > 0 && percent < 100 ? 'round' : 'butt';
+
+    return html`
+      <svg class="gauge-ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="ring-track" cx="50" cy="50" r="${radius}" stroke-width="${thickness}"></circle>
+        <circle class="ring-value" cx="50" cy="50" r="${radius}" stroke-width="${thickness}"
+                stroke-linecap="${linecap}"
+                stroke-dasharray="${arc.toFixed(3)} ${circumference.toFixed(3)}"
+                transform="${transform}" style="stroke: ${color}"></circle>
+      </svg>
+    `;
   }
 
   /**
@@ -1662,40 +1658,6 @@ class UniversalBatteryCard extends LitElement {
     // So 0% = 0deg (top), 50% = 180deg (bottom going left), 100% = 360deg
     const rotation = 360 - (percent * 3.6);
     return `rotate(${rotation}deg)`;
-  }
-
-  /**
-   * Gets the position for a rounded end cap on the gauge
-   * @param {number} percent - Position as percentage (0-100)
-   * @param {number} thickness - Ring thickness as percentage (default 15)
-   * @returns {{x: number, y: number, startY: number}} Position as percentage from top-left
-   */
-  _getCapPosition(percent, thickness = 15) {
-    // Counter-clockwise from top: angle = -(percent * 3.6) degrees
-    // Ring midpoint = 50% - (thickness/2)
-    const ringRadius = 50 - (thickness / 2);
-    const angleRad = -(percent * 3.6) * (Math.PI / 180);
-    const x = 50 + ringRadius * Math.sin(angleRad);
-    const y = 50 - ringRadius * Math.cos(angleRad);
-    const startY = 50 - ringRadius; // Top position for start cap
-    return { x, y, startY };
-  }
-
-  /**
-   * Gets the position for a rounded end cap on the power gauge with direction support
-   * @param {number} percent - Position as percentage (0-100)
-   * @param {number} thickness - Ring thickness as percentage
-   * @param {boolean} isCharging - If true, calculates for clockwise fill; if false, counter-clockwise
-   * @returns {{x: number, y: number, startY: number}} Position as percentage from top-left
-   */
-  _getPowerCapPosition(percent, thickness, isCharging) {
-    const ringRadius = 50 - (thickness / 2);
-    const direction = isCharging ? 1 : -1; // Clockwise = +, Counter-clockwise = -
-    const angleRad = direction * (percent * 3.6) * (Math.PI / 180);
-    const x = 50 + ringRadius * Math.sin(angleRad);
-    const y = 50 - ringRadius * Math.cos(angleRad);
-    const startY = 50 - ringRadius;
-    return { x, y, startY };
   }
 
   render() {
@@ -1748,19 +1710,13 @@ class UniversalBatteryCard extends LitElement {
     const statusIcon = stats.status === 'charging' ? 'mdi:power-plug' :
                        stats.status === 'discharging' ? 'mdi:power-plug-off' : 'mdi:power-plug';
 
-    // Gauge backgrounds
-    const socGaugeBackground = this._getGaugeBackground(stats.socPercent, socColor);
-
     // Power gauge: direction and color based on charging/discharging/idle
     const isCharging = stats.status === 'charging';
     const isIdle = stats.status === 'idle';
     const powerGaugeColor = isIdle ? 'var(--secondary-text-color)' : (isCharging ? 'rgb(0, 128, 0)' : 'rgb(255, 166, 0)');
-    const powerGaugeBackground = this._getPowerGaugeBackground(stats.powerPercent, powerGaugeColor, isCharging);
 
     // Gauge thickness
     const thickness = this._config.gauge_thickness ?? 15;
-    const socCapPos = this._getCapPosition(stats.socPercent, thickness);
-    const powerCapPos = this._getPowerCapPosition(stats.powerPercent, thickness, isCharging);
 
     // Has rates configured for power gauge
     const hasRates = stats.chargeRateW !== null || stats.dischargeRateW !== null;
@@ -1827,13 +1783,8 @@ class UniversalBatteryCard extends LitElement {
         <div class="gauges-container">
           <!-- Main SOC Gauge -->
           <div class="gauge-wrapper main-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.soc_entity)}>
-            <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
-              <!-- Rounded end caps (skipped on the flat-ring fallback — without the
-                   gradient they'd read as stray dots on an empty ring) -->
-              ${SUPPORTS_CONIC_GRADIENT && stats.socPercent > 0 ? html`
-                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
-                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
-              ` : ''}
+            <div class="gauge main-gauge" style="--ring-thickness: ${thickness}%">
+              ${this._renderRing(stats.socPercent, socColor, thickness)}
               <!-- Markers -->
               ${stats.reservePercent !== null ? html`
                 <div class="marker reserve" style="transform-origin: center calc(var(--ubc-gauge-size) / 2 + 6px); transform: ${this._getMarkerRotation(stats.reservePercent)}"></div>
@@ -1865,12 +1816,8 @@ class UniversalBatteryCard extends LitElement {
           <!-- Power Gauge (only if rates configured and enabled) -->
           ${hasRates && this._config.show_rates !== false ? html`
             <div class="gauge-wrapper power-gauge-wrapper" @click=${(e) => this._openMoreInfo(e, this._config.power_entity)}>
-              <div class="gauge power-gauge" style="background: ${powerGaugeBackground}; --ring-thickness: ${thickness}%">
-                <!-- Rounded end caps -->
-                ${SUPPORTS_CONIC_GRADIENT && stats.powerPercent > 0 ? html`
-                  <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.startY}%; left: 50%;"></div>
-                  <div class="gauge-cap" style="background: ${powerGaugeColor}; top: ${powerCapPos.y}%; left: ${powerCapPos.x}%;"></div>
-                ` : ''}
+              <div class="gauge power-gauge" style="--ring-thickness: ${thickness}%">
+                ${this._renderRing(stats.powerPercent, powerGaugeColor, thickness, isCharging)}
                 <div class="gauge-center">
                   ${this._config.show_power_percent !== false ? html`
                     <span class="power-percent">${Math.round(stats.powerPercent)}%</span>
@@ -1953,8 +1900,6 @@ class UniversalBatteryCard extends LitElement {
     const socPercent = 72;
     const socColor = 'rgb(0, 128, 0)';
     const thickness = this._config.gauge_thickness ?? 15;
-    const socCapPos = this._getCapPosition(socPercent, thickness);
-    const socGaugeBackground = this._getGaugeBackground(socPercent, socColor);
 
     return html`
       <ha-card>
@@ -1970,11 +1915,8 @@ class UniversalBatteryCard extends LitElement {
         </div>
         <div class="gauges-container">
           <div class="gauge-wrapper main-gauge-wrapper">
-            <div class="gauge main-gauge" style="background: ${socGaugeBackground}; --ring-thickness: ${thickness}%">
-              ${SUPPORTS_CONIC_GRADIENT && socPercent > 0 ? html`
-                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.startY}%; left: 50%;"></div>
-                <div class="gauge-cap" style="background: ${socColor}; top: ${socCapPos.y}%; left: ${socCapPos.x}%;"></div>
-              ` : ''}
+            <div class="gauge main-gauge" style="--ring-thickness: ${thickness}%">
+              ${this._renderRing(socPercent, socColor, thickness)}
               <div class="gauge-center">
                 <ha-icon icon="mdi:battery-70" style="color: ${socColor}"></ha-icon>
                 <span class="soc-value" style="color: ${socColor}">${socPercent}%</span>

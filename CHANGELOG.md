@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.8.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.8.0)
+
+- Draw the gauge rings as SVG arcs instead of `conic-gradient` backgrounds, fixing cards that rendered as a handful of stray dots on locked-firmware WebViews such as the Shelly Wall Display XL. The v2.7.0 `CSS.supports` fallback couldn't help: those browsers report `conic-gradient` support and then paint nothing, and there's no way to feature-detect the difference. The gradient was never a gradient — both gauges only ever used two hard colour stops, a solid arc on a solid track — so a stroked circle reproduces the design exactly rather than approximating it, and `stroke-linecap: round` replaces the end-cap dots that were sized and positioned to imitate it. Arc endpoints are identical to the old ones at every thickness and percentage (reported by @Explorer900 - #10)
+
 ## [v2.7.1](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.7.1)
 
 - Fix `show_runtime` silently showing nothing when no `soc_energy_entity` is configured. The runtime/depletion estimate was gated on that optional entity with no fallback, so a card with a capacity and an SOC — everything the estimate actually needs — rendered no footer at all on any device. Energy is now derived from SOC % × capacity when the entity isn't set; where it is set, the measured value is still used. The derived figure is deliberately not shown as the gauge's kWh readout, which stays entity-only (reported by @Explorer900 - #10)
