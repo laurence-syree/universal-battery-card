@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.8.0';
+const VERSION = '2.9.0';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -342,6 +342,21 @@ function getBatteryStatus(power, threshold = 0) {
 }
 
 /**
+ * Resolves a configurable colour to a CSS value. Accepts a CSS variable name (string) or an
+ * [r, g, b] tuple — the same convention as the soc_colour_* options.
+ * @param {string|number[]|undefined} value - Configured colour
+ * @param {string} [fallback] - Used when the colour can't be resolved: returned when nothing is
+ *   configured, and given to var() so a variable name that doesn't exist in the theme degrades
+ *   to something visible rather than to no colour at all
+ * @returns {string|undefined} CSS color value (rgb() or var())
+ */
+function resolveColour(value, fallback) {
+  if (typeof value === 'string') return fallback ? `var(${value}, ${fallback})` : `var(${value})`;
+  if (Array.isArray(value)) return `rgb(${value[0]}, ${value[1]}, ${value[2]})`;
+  return fallback;
+}
+
+/**
  * Gets the color for a SOC percentage based on thresholds
  * @param {number} socPercent - State of charge percentage
  * @param {Object} config - Card configuration with threshold/color settings
@@ -357,14 +372,12 @@ function getSocColor(socPercent, config) {
 
   for (const t of thresholds) {
     if (socPercent >= t.threshold) {
-      if (typeof t.color === 'string') return `var(${t.color})`;
-      if (Array.isArray(t.color)) return `rgb(${t.color[0]}, ${t.color[1]}, ${t.color[2]})`;
+      const resolved = resolveColour(t.color);
+      if (resolved !== undefined) return resolved;
     }
   }
 
-  const veryLow = config.soc_colour_very_low ?? [139, 0, 0];
-  if (typeof veryLow === 'string') return `var(${veryLow})`;
-  return `rgb(${veryLow[0]}, ${veryLow[1]}, ${veryLow[2]})`;
+  return resolveColour(config.soc_colour_very_low ?? [139, 0, 0]);
 }
 
 
@@ -814,6 +827,7 @@ const GENERAL_SCHEMA = [
   { name: 'name', label: 'Card Name', selector: { text: {} } },
   { name: 'decimal_places', label: 'Decimal Places', selector: { number: { min: 0, max: 4, mode: 'box' } } },
   { name: 'gauge_thickness', label: 'Gauge Ring Thickness (%)', selector: { number: { min: 5, max: 15, mode: 'slider' } } },
+  { name: 'gauge_track_colour', label: 'Gauge Track Color', selector: { color_rgb: {} } },
   { name: 'power_gauge_scale', label: 'Power Gauge Size vs Main Gauge (%)', selector: { number: { min: 30, max: 100, mode: 'slider' } } },
   { name: 'header_style', label: 'Header Style', selector: { select: { options: [
     { value: 'full', label: 'Full Header' },
@@ -1062,6 +1076,16 @@ class UniversalBatteryCard extends LitElement {
     this._heightProbe = null;
     // Config-derived, not size-derived, so it belongs here rather than in the resize path.
     this.style.setProperty('--ubc-card-min-height', `${this._minCardHeight(this._layoutFlags())}px`);
+    // Inline on the host, which outranks the :host declaration, so one write covers both ring
+    // tracks, the editor preview and the loading skeleton. Removing it restores the theme's
+    // --divider-color — the editor rewrites config live, so clearing the picker must not
+    // leave the last colour stuck.
+    const track = this._config.gauge_track_colour;
+    if (track === undefined || track === null) {
+      this.style.removeProperty('--ubc-gauge-bg');
+    } else {
+      this.style.setProperty('--ubc-gauge-bg', resolveColour(track, 'var(--divider-color, #3a3a3a)'));
+    }
     // Re-run sizing so options like power_gauge_scale apply live in the editor
     if (this.isConnected && this.clientWidth > 0) {
       this._updateGaugeSize(this.clientWidth, this.clientHeight);
@@ -1106,8 +1130,8 @@ class UniversalBatteryCard extends LitElement {
       }
     }
 
-    // SOC colors: either a CSS variable name (string) or an [r,g,b] tuple of 0-255 ints.
-    for (const k of ['soc_colour_very_high', 'soc_colour_high', 'soc_colour_medium', 'soc_colour_low', 'soc_colour_very_low']) {
+    // Colours: either a CSS variable name (string) or an [r,g,b] tuple of 0-255 ints.
+    for (const k of ['soc_colour_very_high', 'soc_colour_high', 'soc_colour_medium', 'soc_colour_low', 'soc_colour_very_low', 'gauge_track_colour']) {
       const v = config[k];
       if (v === undefined || v === null) continue;
       if (typeof v === 'string') continue; // accept any string (CSS var / colour name)

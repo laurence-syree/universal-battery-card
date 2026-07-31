@@ -1,5 +1,10 @@
 # Changelog
 
+## [v2.9.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.0)
+
+- Add `gauge_track_colour` to set the colour of the unfilled part of both gauge rings, as `[r, g, b]` or a CSS variable name. The track follows the theme's `--divider-color`, which Home Assistant sets to 12% white in dark mode — legible on a desktop panel, but invisible on a wall display, where an idle power gauge is entirely track and so disappears completely. Existing cards are unchanged: the theme value still applies unless the option is set (requested by @Explorer900 - #10)
+- Document that every colour option, including the existing `soc_colour_*` values, accepts a CSS variable name as well as an RGB array
+
 ## [v2.8.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.8.0)
 
 - Draw the gauge rings as SVG arcs instead of `conic-gradient` backgrounds, fixing cards that rendered as a handful of stray dots on locked-firmware WebViews such as the Shelly Wall Display XL. The v2.7.0 `CSS.supports` fallback couldn't help: those browsers report `conic-gradient` support and then paint nothing, and there's no way to feature-detect the difference. The gradient was never a gradient — both gauges only ever used two hard colour stops, a solid arc on a solid track — so a stroked circle reproduces the design exactly rather than approximating it, and `stroke-linecap: round` replaces the end-cap dots that were sized and positioned to imitate it. Arc endpoints are identical to the old ones at every thickness and percentage (reported by @Explorer900 - #10)

@@ -95,6 +95,7 @@ Instead of entities, you can set fixed values:
 | `show_capacity` | `true` | Show the "Capacity" row in the header (requires `header_style: full`) |
 | `show_stats` | `true` | Show the temp/cycles/health stats panel in the header (requires `header_style: full`) |
 | `gauge_thickness` | `15` | Ring thickness as percentage (5-15) |
+| `gauge_track_colour` | theme | Colour of the unfilled part of both gauge rings, as `[r, g, b]` or a CSS variable name. Defaults to the theme's `--divider-color`, which can be near-invisible on very dark displays |
 | `power_gauge_scale` | `78` | Power gauge size as % of main gauge (30-100) |
 | `decimal_places` | `3` | Decimal places for energy values |
 
@@ -141,6 +142,15 @@ soc_colour_very_low: [139, 0, 0]
 ```
 
 Note: "Very Low" color applies to any SOC below the "Low" threshold.
+
+Every colour option — the `soc_colour_*` values above and `gauge_track_colour` — accepts either
+an `[r, g, b]` array or the name of a CSS variable, so you can follow your theme instead of
+hard-coding a colour:
+
+```yaml
+soc_colour_very_high: --success-color
+gauge_track_colour: --primary-color
+```
 
 ### Trickle Charge Filter
 
