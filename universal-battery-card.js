@@ -16,7 +16,7 @@ const SUPPORTS_CONIC_GRADIENT = typeof CSS !== 'undefined' && typeof CSS.support
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.7.0';
+const VERSION = '2.7.1';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -1522,17 +1522,25 @@ class UniversalBatteryCard extends LitElement {
     let timeToTarget = null;
     let targetPercent = null;
 
-    if (socEnergyWh !== null && capacityWh !== null && power !== 0) {
+    // The estimate needs an energy figure. Where soc_energy_entity isn't configured, derive it
+    // from SOC % x capacity — otherwise show_runtime (default true) silently renders nothing.
+    // Deliberately not surfaced as the gauge's kWh readout: that line should keep meaning
+    // "a sensor reported this". The clamp guards against a misreporting SOC sensor.
+    const estimatedEnergyWh = socEnergyWh !== null
+      ? socEnergyWh
+      : (capacityWh !== null ? capacityWh * (Math.min(100, Math.max(0, socValue.value)) / 100) : null);
+
+    if (estimatedEnergyWh !== null && capacityWh !== null && power !== 0) {
       if (status === 'charging') {
         // Use cutoff percentage if configured, otherwise 100%
         targetPercent = cutoffPercent !== null ? cutoffPercent : 100;
         const targetEnergy = capacityWh * (targetPercent / 100);
-        timeToTarget = calculateTimeToTarget(socEnergyWh, targetEnergy, power);
+        timeToTarget = calculateTimeToTarget(estimatedEnergyWh, targetEnergy, power);
       } else if (status === 'discharging') {
         // Use reserve percentage if configured, otherwise 0%
         targetPercent = reservePercent !== null ? reservePercent : 0;
         const targetEnergy = capacityWh * (targetPercent / 100);
-        timeToTarget = calculateTimeToTarget(socEnergyWh, targetEnergy, power);
+        timeToTarget = calculateTimeToTarget(estimatedEnergyWh, targetEnergy, power);
       }
     }
 

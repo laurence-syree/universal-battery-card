@@ -84,7 +84,7 @@ Instead of entities, you can set fixed values:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `header_style` | `full` | Header display: `full`, `title`, or `none` |
-| `show_runtime` | `true` | Show time estimates in footer. Charging targets `cutoff` (or 100%); discharging targets `reserve` (or 0%) |
+| `show_runtime` | `true` | Show time estimates in footer. Needs a capacity (`capacity_entity` or fixed `capacity`) — `soc_energy_entity` is used when set, otherwise energy is derived from SOC % × capacity. Charging targets `cutoff` (or 100%); discharging targets `reserve` (or 0%) |
 | `date_format` | `auto` | Footer date format: `auto` (Home Assistant locale), `MM/DD`, or `DD/MM` |
 | `time_format` | `auto` | Footer time format: `auto` (Home Assistant locale), `24`, or `12` |
 | `show_rates` | `true` | Show power gauge (requires charge/discharge rates) |

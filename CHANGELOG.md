@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.7.1](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.7.1)
+
+- Fix `show_runtime` silently showing nothing when no `soc_energy_entity` is configured. The runtime/depletion estimate was gated on that optional entity with no fallback, so a card with a capacity and an SOC — everything the estimate actually needs — rendered no footer at all on any device. Energy is now derived from SOC % × capacity when the entity isn't set; where it is set, the measured value is still used. The derived figure is deliberately not shown as the gauge's kWh readout, which stays entity-only (reported by @Explorer900 - #10)
+
 ## [v2.7.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.7.0)
 
 - Show the discharge runtime footer by default — the time-to-empty estimate now targets 0% when no reserve is configured, instead of being hidden entirely (thanks @Xovos - #11)
