@@ -1,5 +1,10 @@
 # Changelog
 
+## [v2.9.1](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.1)
+
+- Fix the Reserve and Cutoff labels printing over each other on narrower cards — "Reserve 10%" and "Cutoff 100%" rendered as `Reserve 10Cutoff 100%`. They were two independently positioned boxes pinned 10% in from each edge with wrapping disabled, so nothing coupled them and nothing stopped them meeting in the middle; showing the runtime/depletion footer shrinks the gauge, which is what pulled the two ends together. They are now a single row across the same span, so they cannot overlap: where they already fit the position is unchanged to the pixel, and where they don't each label wraps onto two lines instead of colliding. The existing auto-hide still removes them on the smallest gauges (reported by @viceice - #12)
+- Correct the `show_gauge_labels` description in the README — the labels sit above the SOC gauge, not below it
+
 ## [v2.9.0](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.0)
 
 - Add `gauge_track_colour` to set the colour of the unfilled part of both gauge rings, as `[r, g, b]` or a CSS variable name. The track follows the theme's `--divider-color`, which Home Assistant sets to 12% white in dark mode — legible on a desktop panel, but invisible on a wall display, where an idle power gauge is entirely track and so disappears completely. Existing cards are unchanged: the theme value still applies unless the option is set (requested by @Explorer900 - #10)

@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.9.0';
+const VERSION = '2.9.1';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -646,34 +646,37 @@ const cardStyles = css`
     margin-top: 4px;
   }
 
-  /* Gauge Labels (Reserve/Cutoff) */
+  /* Gauge Labels (Reserve/Cutoff) — one row above the SOC gauge.
+     A flex row rather than two independently positioned boxes: as `left: 10%` and
+     `right: 10%` nowrap boxes they had nothing coupling them, so on a narrow gauge
+     the two strings met in the middle and printed over each other (#12). The row
+     keeps the same insets and so the same pixels wherever they already fit; where
+     they don't, the items shrink and wrap instead of colliding. */
   .gauge-labels {
     position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0;
+    bottom: 100%;
     left: 0;
+    width: 100%;
+    margin-bottom: 5px;
+    box-sizing: border-box;
+    padding: 0 10%;
+    display: var(--ubc-label-display, flex);
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 4px;
     pointer-events: none;
   }
 
   .gauge-label {
-    position: absolute;
     font-size: 0.75em;
     color: var(--ubc-secondary-text);
-    white-space: nowrap;
-    display: var(--ubc-label-display, block);
+    text-align: center;
   }
 
-  .gauge-label.reserve {
-    top: -5px;
-    left: 10%;
-    transform: translateY(-100%);
-  }
-
+  /* Keeps cutoff on the right when it's the only label — space-between alone
+     would park a lone item on the left. */
   .gauge-label.cutoff {
-    top: -5px;
-    right: 10%;
-    transform: translateY(-100%);
+    margin-left: auto;
   }
 
   /* Gauge Markers */
@@ -1426,7 +1429,7 @@ class UniversalBatteryCard extends LitElement {
 
     const hideLabels = gaugeSize < LABELS_HIDE_BELOW_PX
       || (flags.headerStyle !== 'none' && gaugeSize < LABELS_HIDE_BELOW_PX_WITH_HEADER);
-    const labelDisplay = hideLabels ? 'none' : 'block';
+    const labelDisplay = hideLabels ? 'none' : 'flex';
     const statsDisplay = containerWidth < STATS_PANEL_HIDE_BELOW_PX ? 'none' : 'flex';
     // Text under the power gauge yields before the gauges do — a card short enough that the rate
     // labels don't fit is better off with a readable gauge than with the labels kept.

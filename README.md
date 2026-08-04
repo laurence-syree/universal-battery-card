@@ -91,7 +91,7 @@ Instead of entities, you can set fixed values:
 | `show_rate_labels` | `true` | Show "Max Charge" / "Max Discharge" labels below the power gauge |
 | `show_power_percent` | `true` | Show the power percentage inside the power gauge |
 | `show_power_direction` | `true` | Show the "Charge / Discharge / Idle" label + arrow inside the power gauge |
-| `show_gauge_labels` | `true` | Show "Reserve" / "Cutoff" text labels below the SOC gauge (markers on ring stay) |
+| `show_gauge_labels` | `true` | Show "Reserve" / "Cutoff" text labels above the SOC gauge (markers on ring stay) |
 | `show_capacity` | `true` | Show the "Capacity" row in the header (requires `header_style: full`) |
 | `show_stats` | `true` | Show the temp/cycles/health stats panel in the header (requires `header_style: full`) |
 | `gauge_thickness` | `15` | Ring thickness as percentage (5-15) |
