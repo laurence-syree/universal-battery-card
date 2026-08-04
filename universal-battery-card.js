@@ -647,8 +647,8 @@ const cardStyles = css`
   }
 
   /* Gauge Labels (Reserve/Cutoff) — one row above the SOC gauge.
-     A flex row rather than two independently positioned boxes: as `left: 10%` and
-     `right: 10%` nowrap boxes they had nothing coupling them, so on a narrow gauge
+     A flex row rather than two independently positioned boxes: as left:10% and
+     right:10% nowrap boxes they had nothing coupling them, so on a narrow gauge
      the two strings met in the middle and printed over each other (#12). The row
      keeps the same insets and so the same pixels wherever they already fit; where
      they don't, the items shrink and wrap instead of colliding. */
