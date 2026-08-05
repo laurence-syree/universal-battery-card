@@ -1,5 +1,9 @@
 # Changelog
 
+## [v2.9.3](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.3)
+
+- Keep the Reserve and Cutoff labels on screen instead of hiding them when space runs short. v2.9.2 hid the row once it would have escaped the top of the card, which fixed the overflow but took the labels away from the people who wanted to read them. The gauge now yields instead: the sizing pass measures how tall the row actually is at the size it is about to apply, reserves that band above the ring, and sizes the gauge to what's left. The labels stay exactly where they were relative to the ring, the row can no longer reach the card's edge because the space it needs was subtracted before the gauge was drawn, and the cost is a slightly smaller gauge on short cards. The readability floor still applies, so very small gauges drop the labels and get those pixels back (reported by @viceice - #12)
+
 ## [v2.9.2](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.2)
 
 - Hide the Reserve and Cutoff labels when they no longer fit above the gauge, instead of letting them escape the card. v2.9.1 stopped the two labels overlapping by wrapping each onto two lines, but a wrapped row is taller than the space above the ring, so on a narrow card it climbed out through the top edge and drew over whatever card sat above it. The labels sit outside the layout flow, so no other measurement could see this happening: the card now measures where the row actually lands, at the size it is about to apply, and hides it if it would cross the card's edge or the header. That answer depends on whether the text wrapped, which depends on the label strings, the font and the theme, so it is measured rather than inferred from the gauge diameter (reported by @viceice - #12)
