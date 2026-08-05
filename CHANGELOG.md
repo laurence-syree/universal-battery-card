@@ -1,5 +1,10 @@
 # Changelog
 
+## [v2.9.2](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.2)
+
+- Hide the Reserve and Cutoff labels when they no longer fit above the gauge, instead of letting them escape the card. v2.9.1 stopped the two labels overlapping by wrapping each onto two lines, but a wrapped row is taller than the space above the ring, so on a narrow card it climbed out through the top edge and drew over whatever card sat above it. The labels sit outside the layout flow, so no other measurement could see this happening: the card now measures where the row actually lands, at the size it is about to apply, and hides it if it would cross the card's edge or the header. That answer depends on whether the text wrapped, which depends on the label strings, the font and the theme, so it is measured rather than inferred from the gauge diameter (reported by @viceice - #12)
+- Hide the labels with `visibility` rather than `display`, so a hidden row keeps its geometry and the fit check above can't flip-flop by measuring a removed element as zero-sized. Cards styled with card_mod should use `--ubc-label-visibility` in place of `--ubc-label-display`
+
 ## [v2.9.1](https://github.com/laurence-syree/universal-battery-card/releases/tag/v2.9.1)
 
 - Fix the Reserve and Cutoff labels printing over each other on narrower cards — "Reserve 10%" and "Cutoff 100%" rendered as `Reserve 10Cutoff 100%`. They were two independently positioned boxes pinned 10% in from each edge with wrapping disabled, so nothing coupled them and nothing stopped them meeting in the middle; showing the runtime/depletion footer shrinks the gauge, which is what pulled the two ends together. They are now a single row across the same span, so they cannot overlap: where they already fit the position is unchanged to the pixel, and where they don't each label wraps onto two lines instead of colliding. The existing auto-hide still removes them on the smallest gauges (reported by @viceice - #12)
