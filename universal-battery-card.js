@@ -9,7 +9,7 @@ const css = LitElement.prototype.css;
 
 const CARD_NAME = 'Universal Battery Card';
 const CARD_DESCRIPTION = 'A generic battery card for any Home Assistant battery system';
-const VERSION = '2.9.3';
+const VERSION = '2.9.4';
 
 const DEFAULT_CONFIG = {
   name: 'Battery',
@@ -42,6 +42,7 @@ const DEFAULT_CONFIG = {
   show_capacity: true,
   show_stats: true,
   header_style: 'full', // 'none', 'title', 'full'
+  gauge_label_position: 'above', // 'above', 'below' — which side of the SOC ring Reserve/Cutoff sit
   invert_power: false,
   date_format: 'auto', // 'auto' (HA locale), 'MM/DD', 'DD/MM'
   time_format: 'auto', // 'auto' (HA locale), '24', '12'
@@ -86,9 +87,14 @@ const ENCROACH_SAFETY_PX = 24;         // breathing room between gauge edge and 
 const ENCROACH_THRESHOLD_PX = 4;       // min size gain to bother engaging encroach
 
 // Auto-hide thresholds
-const LABELS_HIDE_BELOW_PX = 120;                // reserve/cutoff labels unreadable below this
+// The 'above' row is squeezed between the ring and whatever the card put over it, so it goes
+// while the gauge is still legible. The 'below' row has nothing above it to crowd and its font
+// doesn't scale with the ring, so it only goes when the gauge has run out of room entirely —
+// hiding it on a small-but-readable gauge is what left #12's reporter with no labels at all.
+const LABELS_HIDE_BELOW_PX = 120;                // 'above' labels unreadable below this
 const LABELS_HIDE_BELOW_PX_WITH_HEADER = 140;    // ...and earlier when a header is present
-const LABELS_GAP_PX = 5;                         // gap between the label row and the ring
+const LABELS_GAP_PX = 5;                         // gap between the 'above' row and the ring
+const LABELS_BELOW_MARGIN_PX = 8;                // .gauge-labels.below margin-top — outside offsetHeight
 const LABELS_BLOCK_FALLBACK_PX = 19;             // one line + gap, until the row is measured
 const STATS_PANEL_HIDE_BELOW_PX = 350;           // stats panel hidden when card narrower than this
 
@@ -648,34 +654,47 @@ const cardStyles = css`
     margin-top: 4px;
   }
 
-  /* Gauge Labels (Reserve/Cutoff) — one row above the SOC gauge.
+  /* Gauge Labels (Reserve/Cutoff) — one row naming the SOC ring's two markers.
      A flex row rather than two independently positioned boxes: as left:10% and
      right:10% nowrap boxes they had nothing coupling them, so on a narrow gauge
      the two strings met in the middle and printed over each other (#12). The row
      keeps the same insets and so the same pixels wherever they already fit; where
      they don't, the items shrink and wrap instead of colliding.
-     The row sits in the wrapper's own top padding, which the sizing pass reserves for it
-     (--ubc-label-block). Out of flow but in reserved space: the ring keeps its position
-     relative to the text, and the row can no longer climb out through the top of the card,
-     because the gauge it belongs to was sized to leave room for it. */
+
+     gauge_label_position decides which side of the ring the row goes. Either way the
+     sizing pass measures the row at the size it is about to draw and takes that height
+     out of the gauge's budget, so the row always has somewhere to sit and the ring keeps
+     its position relative to the text.
+       above (default) — out of flow, in the band the wrapper reserves as top padding
+       below           — in flow under the ring, mirroring the power gauge's rate labels.
+                         Nothing above the ring to collide with, so this one survives on
+                         short cards where the band above would have squeezed the gauge
+                         under the readability floor (#12 follow-up). */
   .gauge-labels {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0 10%;
-    display: flex;
+    /* Hidden by the sizing pass when there's no room for the row and a readable gauge both. */
+    display: var(--ubc-label-display, flex);
     justify-content: space-between;
     align-items: flex-end;
     gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
     pointer-events: none;
-    /* Hidden rather than removed: the row keeps its geometry, so the sizing pass can still
-       measure how tall it would be. A display:none'd row measures zero. */
-    visibility: var(--ubc-label-visibility, visible);
   }
 
-  /* The reserved band. Zero unless the labels are showing, so nothing else pays for it. */
+  .gauge-labels.above {
+    position: absolute;
+    top: 0;
+    left: 0;
+    padding: 0 10%;
+  }
+
+  .gauge-labels.below {
+    margin-top: 8px;
+    padding: 0 10px;
+  }
+
+  /* The band the 'above' row sits in. Zero for 'below' and while the labels are hidden,
+     so nothing else pays for it. */
   .main-gauge-wrapper {
     padding-top: var(--ubc-label-block, 0px);
   }
@@ -866,6 +885,10 @@ const GENERAL_SCHEMA = [
   { name: 'show_power_percent', label: 'Display Power Percentage', selector: { boolean: {} } },
   { name: 'show_power_direction', label: 'Display Power Direction Label', selector: { boolean: {} } },
   { name: 'show_gauge_labels', label: 'Display Reserve/Cutoff Labels', selector: { boolean: {} } },
+  { name: 'gauge_label_position', label: 'Reserve/Cutoff Label Position', selector: { select: { mode: 'dropdown', options: [
+    { value: 'above', label: 'Above the gauge' },
+    { value: 'below', label: 'Below the gauge' },
+  ] } } },
   { name: 'show_capacity', label: 'Display Capacity in Header', selector: { boolean: {} } },
   { name: 'show_stats', label: 'Display Stats Panel (Temp/Cycles/Health)', selector: { boolean: {} } },
 ];
@@ -1163,6 +1186,11 @@ class UniversalBatteryCard extends LitElement {
       throw new Error(`header_style must be 'full', 'title', or 'none' (got ${JSON.stringify(config.header_style)})`);
     }
 
+    // gauge_label_position enum
+    if (config.gauge_label_position !== undefined && !['above', 'below'].includes(config.gauge_label_position)) {
+      throw new Error(`gauge_label_position must be 'above' or 'below' (got ${JSON.stringify(config.gauge_label_position)})`);
+    }
+
     // date_format / time_format enums
     if (config.date_format !== undefined && !['auto', 'MM/DD', 'DD/MM'].includes(config.date_format)) {
       throw new Error(`date_format must be 'auto', 'MM/DD', or 'DD/MM' (got ${JSON.stringify(config.date_format)})`);
@@ -1213,7 +1241,8 @@ class UniversalBatteryCard extends LitElement {
                      c.discharge_rate_entity || c.discharge_rate;
     const showPowerGauge = hasRates && showRates;
     const powerScale = Math.max(30, Math.min(100, c.power_gauge_scale ?? 78)) / 100;
-    return { headerStyle, showRuntime, showPowerGauge, powerScale };
+    const labelsBelow = c.gauge_label_position === 'below';
+    return { headerStyle, showRuntime, showPowerGauge, powerScale, labelsBelow };
   }
 
   // Static estimates for header/footer heights — used pre-render and by HA layout APIs.
@@ -1365,26 +1394,36 @@ class UniversalBatteryCard extends LitElement {
     return totalGaugesWidth <= middleSpace;
   }
 
-  // How much vertical space the reserve/cutoff row needs above the gauge, at a gauge size
-  // we are considering but haven't applied yet.
+  // How much vertical space the reserve/cutoff row needs beside the gauge, at a gauge size
+  // we are considering but haven't applied yet. Same figure whichever side the row is on:
+  // above it becomes the wrapper's top padding, below it is the row's own in-flow height.
   //
   // It has to be measured rather than derived: the row's height depends on whether the two
   // labels wrapped onto two lines, which depends on the label strings, the font size and
   // the user's theme. Guessing it is what let a wrapped row climb out through the top of
   // the card and paint over the card above (#12, follow-up).
   //
-  // Same write-read-restore trick as _probeContentDrivenHeight — the write and the read
-  // happen in one frame, so the probe size is never painted. visibility:hidden keeps
-  // layout, so this reads correctly whether or not the labels are currently shown.
-  _probeLabelBlock(gaugeSize) {
+  // Same write-read-restore trick as _probeContentDrivenHeight — the writes and the read
+  // happen in one frame, so neither the probe size nor the forced display is ever painted.
+  // Display has to be forced because a hidden row is display:none'd, and that measures zero;
+  // the row must stay measurable while hidden or it could never come back.
+  _probeLabelBlock(gaugeSize, labelsBelow) {
     const labelsEl = this.renderRoot?.querySelector?.('.gauge-labels');
     if (!labelsEl) return 0;
-    const previous = this.style.getPropertyValue('--ubc-gauge-size');
+    const previousSize = this.style.getPropertyValue('--ubc-gauge-size');
+    const previousDisplay = this.style.getPropertyValue('--ubc-label-display');
     this.style.setProperty('--ubc-gauge-size', `${gaugeSize}px`);
+    this.style.setProperty('--ubc-label-display', 'flex');
     const height = labelsEl.offsetHeight; // forces layout at the probe size
-    if (previous) this.style.setProperty('--ubc-gauge-size', previous);
-    else this.style.removeProperty('--ubc-gauge-size');
-    return height ? height + LABELS_GAP_PX : 0;
+    const restore = (prop, value) => {
+      if (value) this.style.setProperty(prop, value);
+      else this.style.removeProperty(prop);
+    };
+    restore('--ubc-gauge-size', previousSize);
+    restore('--ubc-label-display', previousDisplay);
+    // offsetHeight excludes margin either way, so the gap to the ring is added here: the
+    // row's own margin-top for 'below', the band's share of the wrapper padding for 'above'.
+    return height ? height + (labelsBelow ? LABELS_BELOW_MARGIN_PX : LABELS_GAP_PX) : 0;
   }
 
   // Apply computed sizing values to CSS vars / host class, with a no-op guard so
@@ -1398,8 +1437,8 @@ class UniversalBatteryCard extends LitElement {
       && Math.abs(last.gaugeSize - values.gaugeSize) < GAUGE_DEADBAND_PX
       && Math.abs(last.powerGaugeSize - values.powerGaugeSize) < GAUGE_DEADBAND_PX
       && last.gaugeGap === values.gaugeGap
-      && last.labelBlock === values.labelBlock
-      && last.labelVisibility === values.labelVisibility
+      && last.labelBand === values.labelBand
+      && last.labelDisplay === values.labelDisplay
       && last.statsDisplay === values.statsDisplay
       && last.rateLabelDisplay === values.rateLabelDisplay
       && last.useEncroach === values.useEncroach) {
@@ -1409,8 +1448,10 @@ class UniversalBatteryCard extends LitElement {
     this.style.setProperty('--ubc-gauge-size', `${values.gaugeSize}px`);
     this.style.setProperty('--ubc-power-gauge-size', `${values.powerGaugeSize}px`);
     this.style.setProperty('--ubc-gauge-gap', `${values.gaugeGap}px`);
-    this.style.setProperty('--ubc-label-block', `${values.labelBlock}px`);
-    this.style.setProperty('--ubc-label-visibility', values.labelVisibility);
+    // Only the 'above' row is drawn in the band; 'below' takes its space in flow instead,
+    // so it must not also pad the wrapper or the gauge pays for the row twice.
+    this.style.setProperty('--ubc-label-block', `${values.labelBand}px`);
+    this.style.setProperty('--ubc-label-display', values.labelDisplay);
     this.style.setProperty('--ubc-stats-display', values.statsDisplay);
     this.style.setProperty('--ubc-rate-label-display', values.rateLabelDisplay);
     this.classList.toggle('gauges-encroach-header', values.useEncroach);
@@ -1481,12 +1522,20 @@ class UniversalBatteryCard extends LitElement {
     let labelBlock = labelsPresent ? (this._lastLabelBlock || LABELS_BLOCK_FALLBACK_PX) : 0;
     let { size: gaugeSize, useEncroach } = sizeAt(labelBlock);
 
-    // Below the readability floor the labels go entirely, and the band goes with them, so the
-    // gauge gets those pixels back rather than reserving space for something it won't draw.
-    const hideLabels = gaugeSize < LABELS_HIDE_BELOW_PX
-      || (flags.headerStyle !== 'none' && gaugeSize < LABELS_HIDE_BELOW_PX_WITH_HEADER);
+    // Whether the labels survive at this size. The 'above' row keeps the readability floors:
+    // it is wedged between the ring and whatever the card put over it, and it is the first
+    // thing worth dropping when that gap gets tight. The 'below' row has the full width under
+    // the ring to itself and a font that doesn't scale with the gauge, so a small gauge is no
+    // reason to drop it — it goes only once the gauge is down on its hard floor and there is
+    // genuinely nothing left to give. Hiding it earlier is what left #12's reporter with a card
+    // that showed the labels for one frame after a reload and then none at all.
+    let hideLabels = !labelsPresent;
+    if (labelsPresent && !flags.labelsBelow) {
+      hideLabels = gaugeSize < LABELS_HIDE_BELOW_PX
+        || (flags.headerStyle !== 'none' && gaugeSize < LABELS_HIDE_BELOW_PX_WITH_HEADER);
+    }
     if (labelsPresent && !hideLabels) {
-      const measured = this._probeLabelBlock(gaugeSize);
+      const measured = this._probeLabelBlock(gaugeSize, flags.labelsBelow);
       if (measured) {
         this._lastLabelBlock = measured;
         if (measured !== labelBlock) {
@@ -1494,13 +1543,21 @@ class UniversalBatteryCard extends LitElement {
           ({ size: gaugeSize, useEncroach } = sizeAt(labelBlock));
         }
       }
-    } else {
+      if (flags.labelsBelow && gaugeSize <= HARD_FLOOR_PX) hideLabels = true;
+    }
+    if (hideLabels) {
+      // Hiding has to hand the space back. Sizing against the band and then applying without
+      // it left the card paying for a row it wasn't going to draw: a gauge shrunk to fit the
+      // labels, and no labels (#12 follow-up).
       labelBlock = 0;
+      ({ size: gaugeSize, useEncroach } = sizeAt(0));
     }
 
     const powerGaugeSize = Math.round(gaugeSize * flags.powerScale);
     gaugeGap = Math.round(gaugeGap);
-    const labelVisibility = hideLabels ? 'hidden' : 'visible';
+    const labelDisplay = hideLabels ? 'none' : 'flex';
+    // 'below' takes its space in flow, so it must not pad the wrapper as well.
+    const labelBand = flags.labelsBelow ? 0 : labelBlock;
     const statsDisplay = containerWidth < STATS_PANEL_HIDE_BELOW_PX ? 'none' : 'flex';
     // Text under the power gauge yields before the gauges do — a card short enough that the rate
     // labels don't fit is better off with a readable gauge than with the labels kept.
@@ -1510,7 +1567,7 @@ class UniversalBatteryCard extends LitElement {
       : 'none';
 
     this._applySizing({
-      gaugeSize, powerGaugeSize, gaugeGap, labelBlock, labelVisibility, statsDisplay,
+      gaugeSize, powerGaugeSize, gaugeGap, labelBand, labelDisplay, statsDisplay,
       rateLabelDisplay, useEncroach,
     });
   }
@@ -1901,7 +1958,7 @@ class UniversalBatteryCard extends LitElement {
             </div>
             <!-- Labels outside gauge -->
             ${this._config.show_gauge_labels !== false ? html`
-              <div class="gauge-labels">
+              <div class="gauge-labels ${this._config.gauge_label_position === 'below' ? 'below' : 'above'}">
                 ${stats.reservePercent !== null ? html`
                   <div class="gauge-label reserve">Reserve ${Math.round(stats.reservePercent)}%</div>
                 ` : ''}
