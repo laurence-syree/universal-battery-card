@@ -42,7 +42,7 @@ const DEFAULT_CONFIG = {
   show_capacity: true,
   show_stats: true,
   header_style: 'full', // 'none', 'title', 'full'
-  gauge_label_position: 'above', // 'above', 'below' — which side of the SOC ring Reserve/Cutoff sit
+  gauge_label_position: 'above', // 'above' or 'below': which side of the SOC ring Reserve/Cutoff sit
   invert_power: false,
   date_format: 'auto', // 'auto' (HA locale), 'MM/DD', 'DD/MM'
   time_format: 'auto', // 'auto' (HA locale), '24', '12'
@@ -89,12 +89,12 @@ const ENCROACH_THRESHOLD_PX = 4;       // min size gain to bother engaging encro
 // Auto-hide thresholds
 // The 'above' row is squeezed between the ring and whatever the card put over it, so it goes
 // while the gauge is still legible. The 'below' row has nothing above it to crowd and its font
-// doesn't scale with the ring, so it only goes when the gauge has run out of room entirely —
-// hiding it on a small-but-readable gauge is what left #12's reporter with no labels at all.
+// doesn't scale with the ring, so it only goes when the gauge has run out of room entirely.
+// Hiding it on a small-but-readable gauge is what left #12's reporter with no labels at all.
 const LABELS_HIDE_BELOW_PX = 120;                // 'above' labels unreadable below this
 const LABELS_HIDE_BELOW_PX_WITH_HEADER = 140;    // ...and earlier when a header is present
 const LABELS_GAP_PX = 5;                         // gap between the 'above' row and the ring
-const LABELS_BELOW_MARGIN_PX = 8;                // .gauge-labels.below margin-top — outside offsetHeight
+const LABELS_BELOW_MARGIN_PX = 8;                // .gauge-labels.below margin-top, outside offsetHeight
 const LABELS_BLOCK_FALLBACK_PX = 19;             // one line + gap, until the row is measured
 const STATS_PANEL_HIDE_BELOW_PX = 350;           // stats panel hidden when card narrower than this
 
@@ -654,7 +654,7 @@ const cardStyles = css`
     margin-top: 4px;
   }
 
-  /* Gauge Labels (Reserve/Cutoff) — one row naming the SOC ring's two markers.
+  /* Gauge Labels (Reserve/Cutoff): one row naming the SOC ring's two markers.
      A flex row rather than two independently positioned boxes: as left:10% and
      right:10% nowrap boxes they had nothing coupling them, so on a narrow gauge
      the two strings met in the middle and printed over each other (#12). The row
@@ -665,8 +665,8 @@ const cardStyles = css`
      sizing pass measures the row at the size it is about to draw and takes that height
      out of the gauge's budget, so the row always has somewhere to sit and the ring keeps
      its position relative to the text.
-       above (default) — out of flow, in the band the wrapper reserves as top padding
-       below           — in flow under the ring, mirroring the power gauge's rate labels.
+       above (default): out of flow, in the band the wrapper reserves as top padding
+       below:           in flow under the ring, mirroring the power gauge's rate labels.
                          Nothing above the ring to collide with, so this one survives on
                          short cards where the band above would have squeezed the gauge
                          under the readability floor (#12 follow-up). */
@@ -1403,7 +1403,7 @@ class UniversalBatteryCard extends LitElement {
   // the user's theme. Guessing it is what let a wrapped row climb out through the top of
   // the card and paint over the card above (#12, follow-up).
   //
-  // Same write-read-restore trick as _probeContentDrivenHeight — the writes and the read
+  // Same write-read-restore trick as _probeContentDrivenHeight: the writes and the read
   // happen in one frame, so neither the probe size nor the forced display is ever painted.
   // Display has to be forced because a hidden row is display:none'd, and that measures zero;
   // the row must stay measurable while hidden or it could never come back.
@@ -1526,7 +1526,7 @@ class UniversalBatteryCard extends LitElement {
     // it is wedged between the ring and whatever the card put over it, and it is the first
     // thing worth dropping when that gap gets tight. The 'below' row has the full width under
     // the ring to itself and a font that doesn't scale with the gauge, so a small gauge is no
-    // reason to drop it — it goes only once the gauge is down on its hard floor and there is
+    // reason to drop it. It goes only once the gauge is down on its hard floor and there is
     // genuinely nothing left to give. Hiding it earlier is what left #12's reporter with a card
     // that showed the labels for one frame after a reload and then none at all.
     let hideLabels = !labelsPresent;
